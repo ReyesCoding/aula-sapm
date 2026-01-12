@@ -1,0 +1,38 @@
+# Dependencias
+node_modules/
+package-lock.json
+
+# Entorno y Secretos
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build y Logs
+dist/
+build/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDEs y Sistemas
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Base de datos (SQLite)
+backend/prisma/dev.db
+backend/prisma/dev.db-journal
+
+# Archivos subidos (Uploads)
+# Queremos la carpeta pero no el contenido, excepto el .gitkeep si existiera
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Basura antigua (por seguridad)
+webcolegio/
+webColegio doc.docx

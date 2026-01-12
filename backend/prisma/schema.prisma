@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ENUMS
+enum RoleName {
+  ADMIN
+  TEACHER
+  STUDENT
+  PARENT
+}
+
+enum AssignmentStatus {
+  PENDING
+  SUBMITTED
+  LATE
+  GRADED
+}
+
+// USUARIOS
+model User {
+  id       Int      @id @default(autoincrement())
+  name     String
+  email    String   @unique
+  password String
+  role     RoleName @default(STUDENT)
+  isActive Boolean  @default(true)
+  
+  // Relaciones Existentes
+  createdAssignments  Assignment[]  @relation("CreatedBy") // Tareas creadas (Teacher)
+  myAssignments       Assignment[]  @relation("AssignedTo") // Tareas recibidas (Student)
+  
+  // Relación Padre-Hijo
+  children            ParentChild[] @relation("Parent")
+  parents             ParentChild[] @relation("Child")
+
+  // 👇 NUEVAS RELACIONES (FASE 2: CURSOS)
+  teachingCourses     Course[]      @relation("TeacherCourses") // Cursos que imparte (Teacher)
+  enrollments         Enrollment[]  // Cursos donde está inscrito (Student)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// TABLA PIVOTE PADRE-HIJO
+model ParentChild {
+  parentId  Int
+  childId   Int
+  parent    User @relation("Parent", fields: [parentId], references: [id])
+  child     User @relation("Child", fields: [childId], references: [id])
+
+  @@id([parentId, childId])
+}
+
+// ASIGNATURAS (Ej: Matemáticas, Historia)
+model Subject {
+  id          Int          @id @default(autoincrement())
+  name        String
+  
+  // Relaciones
+  assignments Assignment[] // Mantenemos esto para compatibilidad con tareas viejas
+  courses     Course[]     // 👇 Una materia tiene muchos cursos (Matemáticas -> 4to A, 4to B)
+}
+
+// 👇 NUEVO MODELO: CURSO (El Aula Virtual, ej: "Matemáticas 4to A")
+model Course {
+  id          Int      @id @default(autoincrement())
+  name        String   
+  description String?
+  code        String   @unique // Código único para unirse (ej: MAT-2025-A)
+  
+  // Relaciones
+  subjectId   Int
+  subject     Subject  @relation(fields: [subjectId], references: [id])
+  
+  teacherId   Int
+  teacher     User     @relation("TeacherCourses", fields: [teacherId], references: [id])
+  
+  students    Enrollment[] // Estudiantes inscritos
+  assignments Assignment[] // Tareas de este curso
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 👇 NUEVO MODELO: MATRÍCULA (Tabla Pivote Estudiante <-> Curso)
+model Enrollment {
+  studentId Int
+  student   User   @relation(fields: [studentId], references: [id])
+  
+  courseId  Int
+  course    Course @relation(fields: [courseId], references: [id])
+  
+  enrolledAt DateTime @default(now())
+
+  @@id([studentId, courseId]) // Evita que un estudiante se inscriba doble
+}
+
+// TAREAS (ASSIGNMENTS) - ACTUALIZADO
+model Assignment {
+  id          Int              @id @default(autoincrement())
+  title       String
+  description String?
+  dueDate     DateTime
+  
+  status      AssignmentStatus @default(PENDING) 
+  
+  grade       Int?
+
+  // 📂 ARCHIVOS Y COMENTARIOS
+  attachmentUrl     String? 
+  submissionUrl     String? 
+  submissionComment String? 
+  feedback          String? 
+  
+  fileUrl           String?
+
+  // RELACIONES
+  // 👇 CAMBIO IMPORTANTE: Hacemos Subject opcional (?) para transicionar a Course
+  subjectId   Int?
+  subject     Subject? @relation(fields: [subjectId], references: [id])
+
+  // 👇 NUEVO CAMPO: Relación con Curso (Opcional por ahora para no romper tareas viejas)
+  courseId    Int?
+  course      Course?  @relation(fields: [courseId], references: [id])
+
+  creatorId   Int
+  creator     User     @relation("CreatedBy", fields: [creatorId], references: [id])
+
+  studentId   Int?
+  student     User?   @relation("AssignedTo", fields: [studentId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
