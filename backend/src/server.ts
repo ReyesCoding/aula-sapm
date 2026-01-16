@@ -10,6 +10,8 @@ import reportRoutes from './routes/report.routes';
 import path from 'path'; 
 import courseRoutes from './routes/course.routes'; 
 import userRoutes from './routes/users.routes';
+import subjectRoutes from './routes/subject.routes'; 
+import examRoutes from './routes/exam.routes';
 
 // Configuración de entorno
 dotenv.config();
@@ -42,6 +44,8 @@ app.use('/api/reports', reportRoutes);
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 app.use('/api/courses', courseRoutes); 
 app.use('/api/users', userRoutes); 
+app.use('/api/subjects', subjectRoutes);
+app.use('/api/exams', examRoutes);
 
 //  Manejo de Errores Global
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {

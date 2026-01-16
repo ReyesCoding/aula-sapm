@@ -3,7 +3,8 @@ import { AuthProvider } from './context/AuthContext';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Profile } from './pages/Profile';
-import { ProtectedRoute } from './components/ProtectedRoute'; // 👈 AHORA SÍ EXISTE
+import { ProtectedRoute } from './components/ProtectedRoute'; 
+import SubjectDetail from './pages/SubjectDetail';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
           <Route element={<ProtectedRoute />}>
              <Route path="/dashboard" element={<Dashboard />} />
              <Route path="/profile" element={<Profile />} />
+             <Route path="/subject/:id" element={<SubjectDetail />} />
           </Route>
 
           {/* Redirección raíz */}

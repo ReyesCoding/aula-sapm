@@ -1,4 +1,4 @@
-import api from './api'; // 👈 Importante: Usamos nuestra instancia 'api'
+import api from './api'; 
 
 interface LoginCredentials {
   email?: string;

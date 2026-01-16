@@ -119,3 +119,9 @@ export const updateAssignment = async (id: number, data: { title: string, descri
   });
   return response;
 };
+
+export const getAssignmentsBySubject = async (subjectId: number) => {
+  // Pasamos el ID como query param ?subjectId=1
+  const response = await api.get(`/assignments?subjectId=${subjectId}`);
+  return response.data;
+};
