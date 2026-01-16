@@ -3,6 +3,8 @@ import api from './api';
 export interface ExamSummary {
   id: number;
   title: string;
+  isSubmitted: boolean; 
+  score: number | null; 
   _count: { questions: number };
 }
 

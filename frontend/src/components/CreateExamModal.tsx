@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X, Plus, Trash2, CheckCircle, Loader2 } from 'lucide-react'; // 1. Eliminado 'Save'
-import { createExam, type CreateExamDTO } from '../services/exam.service'; // 2. Agregado 'type'
+import { X, Plus, Trash2, CheckCircle, Loader2 } from 'lucide-react';
+import { createExam, type CreateExamDTO } from '../services/exam.service';
 
 interface Props {
   isOpen: boolean;
@@ -9,7 +9,6 @@ interface Props {
   onSuccess: () => void;
 }
 
-// 3. Interfaces Locales para eliminar los 'any'
 interface OptionState {
   text: string;
   isCorrect: boolean;
@@ -21,10 +20,9 @@ interface QuestionState {
   options: OptionState[];
 }
 
-// Estado inicial tipado
 const emptyQuestion: QuestionState = {
   text: "",
-  points: 1,
+  points: 1, // Valor por defecto
   options: [
     { text: "", isCorrect: true },
     { text: "", isCorrect: false }
@@ -37,7 +35,6 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
   const [description, setDescription] = useState("");
   const [duration, setDuration] = useState(60);
   
-  // 4. Estado fuertemente tipado (Adiós 'any')
   const [questions, setQuestions] = useState<QuestionState[]>([{ ...emptyQuestion }]);
 
   if (!isOpen) return null;
@@ -45,7 +42,6 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
   // --- MANEJADORES DE ESTADO ---
   
   const addQuestion = () => {
-    // Clonamos deep para evitar referencias compartidas
     const newQStructure: QuestionState = {
         text: "",
         points: 1,
@@ -83,9 +79,7 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
 
   const setCorrectOption = (qIdx: number, oIdx: number) => {
     const newQ = [...questions];
-    // Resetear todas las opciones de esta pregunta a false
     newQ[qIdx].options.forEach((opt) => opt.isCorrect = false);
-    // Marcar la seleccionada
     newQ[qIdx].options[oIdx].isCorrect = true;
     setQuestions(newQ);
   };
@@ -95,7 +89,6 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
   const handleSubmit = async () => {
     if (!title) return alert("El título es obligatorio");
     
-    // Validación extra: Verificar que las preguntas tengan texto
     const isValid = questions.every(q => q.text.trim() !== "" && q.options.every(o => o.text.trim() !== ""));
     if (!isValid) return alert("Por favor completa todos los campos de texto de las preguntas y opciones.");
 
@@ -157,7 +150,6 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
                 </div>
             </div>
             
-            {/* 5. Agregado el campo Descripción para usar la variable setDescription */}
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Descripción (Opcional)</label>
                 <input 
@@ -172,49 +164,85 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
 
           {/* Lista de Preguntas */}
           <div className="space-y-6">
-            <h3 className="font-bold text-gray-700 flex items-center gap-2">
-               📝 Preguntas ({questions.length})
-            </h3>
+            <div className="flex justify-between items-center">
+                <h3 className="font-bold text-gray-700 flex items-center gap-2">
+                📝 Preguntas ({questions.length})
+                </h3>
+                {/* Contador de puntos totales */}
+                <span className="text-sm bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold">
+                    Total: {questions.reduce((acc, q) => acc + (q.points || 0), 0)} pts
+                </span>
+            </div>
 
             {questions.map((q, qIdx) => (
-              <div key={qIdx} className="bg-gray-50 p-4 rounded-xl border border-gray-200 relative group">
+              <div key={qIdx} className="bg-gray-50 p-4 rounded-xl border border-gray-200 relative group transition-all hover:shadow-md">
+                
+                {/* 🗑️ FIX: Botón Eliminar Flotante (Fuera del contenido) */}
                 <button 
                   onClick={() => removeQuestion(qIdx)}
-                  className="absolute top-2 right-2 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition"
+                  className="absolute -top-3 -right-3 bg-white shadow-sm border border-gray-200 p-2 rounded-full text-gray-400 hover:text-red-500 hover:border-red-200 hover:shadow-md transition z-10"
                   title="Eliminar pregunta"
                 >
-                  <Trash2 size={18} />
+                  <Trash2 size={16} />
                 </button>
 
-                <div className="mb-3 pr-8">
-                  <label className="text-xs font-bold text-gray-500 uppercase">Pregunta {qIdx + 1}</label>
-                  <input 
-                    value={q.text} onChange={e => updateQuestionText(qIdx, e.target.value)}
-                    className="w-full bg-transparent border-b border-gray-300 focus:border-blue-500 outline-none py-1 font-medium text-gray-800"
-                    placeholder="Escribe la pregunta aquí..."
-                  />
+                {/* Header de la Pregunta: Texto + Puntos */}
+                <div className="mb-4">
+                  <div className="flex gap-4 items-start">
+                      {/* Input Texto Pregunta */}
+                      <div className="flex-1">
+                        <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">
+                            Pregunta {qIdx + 1}
+                        </label>
+                        <input 
+                          value={q.text} onChange={e => updateQuestionText(qIdx, e.target.value)}
+                          className="w-full bg-transparent border-b border-gray-300 focus:border-blue-500 outline-none py-1 font-medium text-gray-800 text-lg placeholder-gray-400"
+                          placeholder="¿Cuál es la capital de..."
+                        />
+                      </div>
+
+                      {/* Input Puntos (Separado y Estilizado) */}
+                      <div className="w-24 flex flex-col items-center p-2 bg-white rounded-lg border border-gray-200 shadow-sm">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                            PUNTOS
+                        </label>
+                        <input 
+                          type="number"
+                          min="1"
+                          value={q.points} 
+                          onChange={e => {
+                            const val = parseInt(e.target.value) || 0;
+                            const newQ = [...questions];
+                            newQ[qIdx].points = val;
+                            setQuestions(newQ);
+                          }}
+                          className="w-full text-center font-bold text-gray-800 outline-none text-lg"
+                        />
+                      </div>
+                  </div>
                 </div>
 
-                <div className="space-y-2 ml-4">
+                {/* Opciones */}
+                <div className="space-y-3 pl-2">
                   {q.options.map((opt, oIdx) => (
-                    <div key={oIdx} className="flex items-center gap-3">
+                    <div key={oIdx} className="flex items-center gap-3 group/option">
                       <button 
                         onClick={() => setCorrectOption(qIdx, oIdx)}
-                        className={`p-1 rounded-full transition ${opt.isCorrect ? 'text-green-600 bg-green-100' : 'text-gray-300 hover:text-gray-400'}`}
-                        title="Marcar como correcta"
+                        className={`p-1 rounded-full transition-all ${opt.isCorrect ? 'text-green-600 bg-green-100 ring-2 ring-green-500 ring-offset-1' : 'text-gray-300 hover:text-gray-400'}`}
+                        title={opt.isCorrect ? "Respuesta correcta" : "Marcar como correcta"}
                       >
-                        <CheckCircle size={20} fill={opt.isCorrect ? "currentColor" : "none"} />
+                        <CheckCircle size={22} fill={opt.isCorrect ? "currentColor" : "none"} />
                       </button>
                       
                       <input 
                         value={opt.text} onChange={e => updateOptionText(qIdx, oIdx, e.target.value)}
-                        className={`flex-1 text-sm border-b border-transparent focus:border-gray-300 outline-none py-1 ${opt.isCorrect ? 'font-bold text-green-700' : 'text-gray-600'}`}
+                        className={`flex-1 text-sm border-b border-transparent focus:border-gray-300 outline-none py-1 transition-colors ${opt.isCorrect ? 'font-medium text-gray-900' : 'text-gray-600'}`}
                         placeholder={`Opción ${oIdx + 1}`}
                       />
                     </div>
                   ))}
-                  <button onClick={() => addOption(qIdx)} className="text-xs text-blue-500 hover:underline ml-9 flex items-center gap-1">
-                    <Plus size={12}/> Agregar opción
+                  <button onClick={() => addOption(qIdx)} className="text-xs text-blue-600 hover:text-blue-700 hover:underline ml-10 flex items-center gap-1 font-medium mt-2">
+                    <Plus size={14}/> Agregar otra opción
                   </button>
                 </div>
               </div>
@@ -223,7 +251,7 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
 
           <button 
             onClick={addQuestion}
-            className="w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 hover:border-blue-500 hover:text-blue-600 transition font-medium flex justify-center items-center gap-2"
+            className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50/50 transition font-medium flex justify-center items-center gap-2"
           >
             <Plus size={20}/> Agregar Nueva Pregunta
           </button>
@@ -232,13 +260,13 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
 
         {/* FOOTER */}
         <div className="p-4 border-t bg-gray-50 rounded-b-xl flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg">
+          <button onClick={onClose} className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition">
             Cancelar
           </button>
           <button 
             onClick={handleSubmit}
             disabled={loading}
-            className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+            className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50 transition shadow-sm hover:shadow"
           >
             {loading && <Loader2 className="animate-spin" size={18}/>}
             Guardar Examen

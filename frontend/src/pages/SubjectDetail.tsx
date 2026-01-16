@@ -173,17 +173,29 @@ export default function SubjectDetail() {
                       
                       {/* 👇 AQUÍ ESTÁ LA LÓGICA DEL BOTÓN DE ESTUDIANTE */}
                       {user?.role === 'STUDENT' ? (
-                        <button 
-                          onClick={() => setTakeExamId(exam.id)} // Activa el modal
-                          className="text-sm bg-purple-600 text-white px-3 py-1.5 rounded hover:bg-purple-700 transition"
-                        >
-                          Comenzar Examen
-                        </button>
-                      ) : (
-                        <span className="text-xs text-gray-400 italic">Vista Profesor</span>
-                      )}
-                      
-                    </div>
+    // 👇 LÓGICA DE UN SOLO INTENTO
+    exam.isSubmitted ? (
+      <div className="text-right">
+        <span className="text-xs font-bold text-gray-500 uppercase block mb-1">Calificación</span>
+        <span className={`px-3 py-1 rounded text-sm font-bold ${
+            (exam.score || 0) >= 70 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+        }`}>
+          {exam.score?.toFixed(0)} / 100
+        </span>
+      </div>
+    ) : (
+      <button 
+        onClick={() => setTakeExamId(exam.id)}
+        className="text-sm bg-purple-600 text-white px-3 py-1.5 rounded hover:bg-purple-700 transition shadow-sm"
+      >
+        Comenzar Examen
+      </button>
+    )
+  ) : (
+    <span className="text-xs text-gray-400 italic">Vista Profesor</span>
+  )}
+  
+</div>
                   </div>
                 ))}
               </div>

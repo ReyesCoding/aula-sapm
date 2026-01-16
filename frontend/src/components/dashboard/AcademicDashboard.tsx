@@ -1,22 +1,37 @@
 import { useEffect, useState } from 'react';
-import { Loader2, BookOpen, GraduationCap, ClipboardList } from 'lucide-react'; // 1. Eliminado AlertTriangle
+import { Loader2, BookOpen, TrendingUp, ArrowRight } from 'lucide-react'; // 1. Limpiamos imports no usados
 import { useAuth } from '../../context/AuthContext';
-import { getSubjects, type Subject } from '../../services/subject.service'; // 2. Agregado "type" explícito
+import { getSubjects, type Subject } from '../../services/subject.service';
+import { getDashboardStats } from '../../services/dashboard.service';
 import { useNavigate } from 'react-router-dom';
+import { StatsGrid } from '../StatsGrid';
+import type { DashboardStats } from '../../types/dashboard.types'; // 2. Importamos el tipo correcto
 
 export const AcademicDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  
+  // 3. Tipado estricto para las materias
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  
+  // 4. Tipado estricto para stats (Adiós 'any')
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const data = await getSubjects();
-        setSubjects(data);
+        // Carga simultánea de Materias y Estadísticas
+        const [subjectsData, statsData] = await Promise.all([
+          getSubjects(),
+          getDashboardStats()
+        ]);
+        
+        setSubjects(subjectsData);
+        setStats(statsData);
+
       } catch (error) {
-        console.error("Error cargando materias", error);
+        console.error("Error cargando dashboard", error);
       } finally {
         setLoading(false);
       }
@@ -24,93 +39,99 @@ export const AcademicDashboard = () => {
     loadData();
   }, []);
 
-  if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-primary" size={40}/></div>;
+  if (loading) return <div className="flex h-screen items-center justify-center bg-gray-50"><Loader2 className="animate-spin text-indigo-600" size={40}/></div>;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-      
-      {/* Header de Bienvenida */}
-      <div className="bg-gradient-to-r from-blue-50 to-white p-6 rounded-xl border border-blue-100/50 shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-        <div>
-           <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-             Hola, {user?.name} <span className="text-2xl animate-pulse">👋</span>
-           </h2>
-           <p className="text-gray-500 font-medium">Selecciona un aula para gestionar tareas y exámenes.</p>
-        </div>
-        <div className="text-right hidden sm:block bg-white px-4 py-2 rounded-lg border border-gray-100 shadow-sm">
-            <p className="text-xs text-gray-400 font-bold uppercase">Fecha</p>
-            <p className="text-gray-700 font-mono font-bold">{new Date().toLocaleDateString()}</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <div className="min-h-screen bg-gray-50/50 pb-10">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 py-8">
         
-        {/* Columna Izquierda: Perfil Rápido */}
-        <div className="space-y-6">
-           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 sticky top-24">
-              <h3 className="font-bold text-gray-800 mb-4 text-lg">Tu Ficha</h3>
-              <div className="space-y-4 text-sm">
-                 <div className="flex justify-between items-center py-2 border-b border-gray-50">
-                    <span className="text-gray-500 font-medium">ID Interno</span>
-                    <span className="font-mono font-bold text-gray-700 bg-gray-100 px-2 rounded">#{user?.id}</span>
-                 </div>
-                 <div className="flex justify-between items-center py-2 border-b border-gray-50">
-                    <span className="text-gray-500 font-medium">Rol Actual</span>
-                    <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold border border-blue-200 shadow-sm">{user?.role}</span>
-                 </div>
-                 <div className="pt-2">
-                    <p className="text-xs text-gray-400 mb-1 font-bold uppercase">Correo Electrónico</p>
-                    <p className="font-medium text-gray-800 break-all">{user?.email}</p>
-                 </div>
-              </div>
-           </div>
+        {/* 1. Header Premium con Gradiente */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-700 p-8 shadow-lg text-white">
+          <div className="relative z-10">
+            <h2 className="text-3xl font-bold flex items-center gap-3">
+               Hola, {user?.name} <span className="animate-bounce">👋</span>
+            </h2>
+            <p className="mt-2 text-indigo-100 text-lg opacity-90">
+              Bienvenido a tu panel de control académico. Tienes <span className="font-bold text-white">{subjects.length} aulas activas</span> hoy.
+            </p>
+          </div>
+          {/* Decoración de fondo */}
+          <div className="absolute top-0 right-0 -mt-10 -mr-10 w-64 h-64 bg-white opacity-10 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-40 h-40 bg-purple-500 opacity-20 rounded-full blur-2xl"></div>
         </div>
 
-        {/* Columna Derecha: GRID DE AULAS */}
-        <div className="lg:col-span-2 space-y-6">
-           <div className="flex justify-between items-end border-b border-gray-100 pb-2">
-              <h3 className="font-bold text-gray-800 text-xl">Mis Aulas Virtuales</h3>
+        {/* 2. Grid de Estadísticas */}
+        {stats && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <h3 className="text-lg font-bold text-gray-700 mb-4 flex items-center gap-2">
+              <TrendingUp size={20} className="text-indigo-600"/> Resumen de Actividad
+            </h3>
+            {/* Renderizamos las estadísticas recuperadas */}
+            <StatsGrid stats={stats.stats} />
+          </div>
+        )}
+
+        {/* 3. Grid de Aulas (Diseño Moderno) */}
+        <div>
+           <div className="flex justify-between items-end border-b border-gray-200 pb-4 mb-6">
+              <h3 className="font-bold text-gray-800 text-xl flex items-center gap-2">
+                <BookOpen size={24} className="text-indigo-600"/> Mis Aulas Virtuales
+              </h3>
+              <span className="text-sm text-gray-500 hidden sm:block">Selecciona una tarjeta para entrar</span>
            </div>
 
            {subjects.length === 0 ? (
-             <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
-               <BookOpen className="mx-auto h-12 w-12 text-gray-400" />
-               <h3 className="mt-2 text-sm font-medium text-gray-900">No tienes materias asignadas</h3>
-               {user?.role === 'TEACHER' ? (
-                   <p className="mt-1 text-sm text-gray-500">Espera a que el Administrador te asigne cursos.</p>
-               ) : (
-                   <p className="mt-1 text-sm text-gray-500">Contacta a tu profesor o administrador.</p>
-               )}
+             <div className="text-center py-16 bg-white rounded-2xl border-2 border-dashed border-gray-200 hover:border-indigo-300 transition-colors">
+               <div className="bg-indigo-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                 <BookOpen className="h-8 w-8 text-indigo-400" />
+               </div>
+               <h3 className="text-lg font-medium text-gray-900">Sin asignaciones académicas</h3>
+               <p className="mt-2 text-gray-500 max-w-sm mx-auto">Parece que no tienes materias asignadas actualmente.</p>
              </div>
            ) : (
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-               {subjects.map((subject) => (
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+               {subjects.map((subject, idx) => (
                  <div 
                    key={subject.id}
                    onClick={() => navigate(`/subject/${subject.id}`)}
-                   className="group relative bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer"
+                   className="group relative bg-white rounded-2xl shadow-sm hover:shadow-xl border border-gray-100 hover:border-indigo-100 transition-all duration-300 cursor-pointer overflow-hidden transform hover:-translate-y-1"
+                   style={{ animationDelay: `${idx * 100}ms` }}
                  >
-                   <div className="flex items-start justify-between mb-4">
-                     <div className="p-3 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                       <BookOpen size={24} />
-                     </div>
-                     <span className="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded-full">
-                        ID: {subject.id}
-                     </span>
+                   {/* Header Visual de la Tarjeta */}
+                   <div className={`h-24 w-full bg-gradient-to-r ${idx % 2 === 0 ? 'from-blue-500 to-cyan-500' : 'from-purple-500 to-pink-500'} relative`}>
+                      <div className="absolute -bottom-6 left-6">
+                        <div className="h-14 w-14 bg-white p-3 rounded-xl shadow-md flex items-center justify-center text-indigo-600">
+                           <BookOpen size={28} />
+                        </div>
+                      </div>
                    </div>
 
-                   <h3 className="text-lg font-bold text-gray-800 group-hover:text-blue-700 transition-colors mb-2">
-                     {subject.name}
-                   </h3>
-                   
-                   <div className="flex items-center gap-4 text-sm text-gray-500 mt-4 pt-4 border-t border-gray-50">
-                     <div className="flex items-center gap-1.5" title="Tareas Activas">
-                       <ClipboardList size={16} className="text-emerald-500"/>
-                       <span className="font-medium">{subject._count?.assignments || 0}</span>
+                   <div className="pt-8 p-6">
+                     <div className="flex justify-between items-start mb-2">
+                        <h3 className="text-xl font-bold text-gray-800 group-hover:text-indigo-700 transition-colors line-clamp-1" title={subject.name}>
+                          {subject.name}
+                        </h3>
                      </div>
-                     <div className="flex items-center gap-1.5" title="Exámenes Disponibles">
-                       <GraduationCap size={16} className="text-purple-500"/>
-                       <span className="font-medium">{subject._count?.exams || 0}</span>
+                     
+                     <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-6">
+                        Código: MAT-{subject.id}0{subject.id}
+                     </p>
+                     
+                     {/* Contadores Numéricos Limpios */}
+                     <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div className="bg-gray-50 p-2 rounded-lg text-center group-hover:bg-indigo-50 transition-colors">
+                           <span className="block text-lg font-bold text-gray-700">{subject._count?.assignments || 0}</span>
+                           <span className="text-[10px] text-gray-500 uppercase font-bold">Tareas</span>
+                        </div>
+                        <div className="bg-gray-50 p-2 rounded-lg text-center group-hover:bg-purple-50 transition-colors">
+                           <span className="block text-lg font-bold text-gray-700">{subject._count?.exams || 0}</span>
+                           <span className="text-[10px] text-gray-500 uppercase font-bold">Exámenes</span>
+                        </div>
+                     </div>
+
+                     <div className="flex items-center justify-between pt-4 border-t border-gray-50 text-sm text-indigo-600 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span>Ingresar al aula</span>
+                        <ArrowRight size={16} className="transform group-hover:translate-x-1 transition-transform"/>
                      </div>
                    </div>
                  </div>
@@ -118,7 +139,6 @@ export const AcademicDashboard = () => {
              </div>
            )}
         </div>
-
       </div>
     </div>
   );

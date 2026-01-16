@@ -4,10 +4,12 @@ import { RoleName } from '@prisma/client';
 
 export const getDashboardStats = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = (req as any).user.userId;
-    const role = (req as any).user.role as RoleName;
+    // @ts-ignore
+    const userId = req.user.userId;
+    // @ts-ignore
+    const role = req.user.role as RoleName;
 
-    // 👑 CASO 1: ADMIN (Globales)
+    // 👑 CASO 1: ADMIN
     if (role === RoleName.ADMIN) {
       const [users, courses, assignments] = await Promise.all([
         prisma.user.count(),
@@ -26,61 +28,87 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    // 🎓 CASO 2: STUDENT (Métricas Personales)
+    // 🎓 CASO 2: STUDENT
     if (role === RoleName.STUDENT) {
-      // 1. Obtener tareas totales asignadas a mis cursos (Simplificado: Traemos todas las del sistema que sean PENDING para mi usuario)
-      // Nota: Idealmente filtrarías por cursos inscritos, pero para este ejemplo usaremos conteo directo
       
-      const myAssignments = await prisma.assignment.findMany({
-         where: {
-            // Aquí deberías filtrar por cursos donde el estudiante está inscrito
-            // Por simplicidad en MVP: Contamos las entregas hechas vs total
-         }
-      });
-      
-      // Vamos a contar las entregas que ha hecho este usuario
-      // Asumimos que tienes una tabla Submission o que la Assignment tiene status. 
-      // Como tu modelo actual actualiza el status en la Assignment directamente (relación 1-1 simulada para MVP):
-      
-      // Contar pendientes (PENDING o LATE)
+      // 1. TAREAS: Contar pendientes y completadas
       const pendingCount = await prisma.assignment.count({
-        where: { status: { in: ['PENDING', 'LATE'] } }
+        where: { 
+            studentId: userId,
+            status: { in: ['PENDING', 'LATE'] } 
+        }
       });
 
-      // Contar completadas
       const completedCount = await prisma.assignment.count({
-        where: { status: { in: ['SUBMITTED', 'GRADED'] } }
+        where: { 
+            studentId: userId,
+            status: { in: ['SUBMITTED', 'GRADED'] } 
+        }
       });
+
+      // 2. CALCULAR PROMEDIO
       
-      const total = pendingCount + completedCount;
-      const progress = total > 0 ? Math.round((completedCount / total) * 100) : 0;
+      // A) Traer notas de Tareas Calificadas
+      const gradedAssignments = await prisma.assignment.findMany({
+        where: { 
+            studentId: userId,
+            status: 'GRADED',
+            grade: { not: null } 
+        },
+        select: { grade: true }
+      });
+
+      // B) Traer notas de Exámenes (Usamos la tabla ExamSubmission)
+      const gradedExams = await prisma.examSubmission.findMany({
+        where: { studentId: userId },
+        select: { score: true }
+      });
+
+      // C) Unificar y Calcular (Solución del error TypeScript)
+      // Creamos un array estrictamente de números. Si viene null, usamos 0.
+      const allGrades: number[] = [
+        ...gradedAssignments.map(a => a.grade ?? 0), 
+        ...gradedExams.map(e => e.score ?? 0)       
+      ];
+
+      let averageDisplay = "-";
+      
+      if (allGrades.length > 0) {
+        // Ahora TypeScript sabe que 'a' y 'b' siempre son números
+        const sum = allGrades.reduce((a, b) => a + b, 0);
+        const avg = sum / allGrades.length;
+        averageDisplay = avg.toFixed(1); 
+      }
+
+      // Cálculo de progreso visual
+      const totalActivities = pendingCount + completedCount;
+      const progress = totalActivities > 0 ? Math.round((completedCount / totalActivities) * 100) : 0;
 
       res.json({
         stats: [
-            { label: 'Tareas Pendientes', value: pendingCount, icon: 'clock', color: 'yellow' },
-            { label: 'Tareas Entregadas', value: completedCount, icon: 'check', color: 'green' },
-            { label: 'Progreso General', value: `${progress}%`, icon: 'trending-up', color: 'blue' },
-            { label: 'Promedio', value: '-', icon: 'award', color: 'purple' } // Calcula promedio real si tienes notas
+          { label: 'Tareas Pendientes', value: pendingCount, icon: 'clock', color: 'yellow' },
+          { label: 'Entregas Realizadas', value: completedCount, icon: 'check', color: 'green' },
+          { label: 'Progreso General', value: `${progress}%`, icon: 'trending-up', color: 'blue' },
+          { label: 'Promedio General', value: averageDisplay, icon: 'award', color: 'purple' } 
         ]
       });
       return;
     }
 
-    // 👨‍🏫 CASO 3: TEACHER (Métricas de Gestión)
+    // 👨‍🏫 CASO 3: TEACHER
     if (role === RoleName.TEACHER) {
        const myCourses = await prisma.course.count({ where: { teacherId: userId } });
        const myAssignments = await prisma.assignment.count({ where: { creatorId: userId } });
        const toGrade = await prisma.assignment.count({
-          where: { creatorId: userId, status: 'SUBMITTED' }
+         where: { creatorId: userId, status: 'SUBMITTED' }
        });
 
-       // 👇 LÓGICA NUEVA: Contar alumnos únicos inscritos en mis cursos
        const uniqueStudents = await prisma.enrollment.findMany({
-          where: {
-            course: { teacherId: userId } // Filtramos inscripciones de mis cursos
-          },
-          distinct: ['studentId'], // 👈 MAGIA: Prisma elimina duplicados de estudiantes
-          select: { studentId: true }
+         where: {
+           course: { teacherId: userId }
+         },
+         distinct: ['studentId'],
+         select: { studentId: true }
        });
        
        const totalStudentsCount = uniqueStudents.length;
@@ -90,7 +118,6 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
             { label: 'Por Calificar', value: toGrade, icon: 'alert', color: 'red' },
             { label: 'Mis Cursos', value: myCourses, icon: 'book', color: 'blue' },
             { label: 'Tareas Creadas', value: myAssignments, icon: 'file', color: 'purple' },
-            // 👇 Aquí ponemos el valor real
             { label: 'Alumnos Totales', value: totalStudentsCount, icon: 'users', color: 'green' }
         ]
       });

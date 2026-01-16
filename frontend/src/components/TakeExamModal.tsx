@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { X, Clock, AlertCircle, Loader2 } from 'lucide-react'; // 1. Eliminado CheckCircle
+import { useEffect, useState, useCallback } from 'react';
+import { X, Clock, AlertCircle, Loader2 } from 'lucide-react';
 import { getExamById, submitExamResponses } from '../services/exam.service';
 
 interface Props {
@@ -7,9 +7,11 @@ interface Props {
   onClose: () => void;
   examId: number;
   onExamSubmitted: () => void;
+  // 👇 Nuevas props para modo revisión
+  initialScore?: number | null;
+  isReviewMode?: boolean;
 }
 
-// 2. Definición de Tipos Estrictos para la estructura del Examen
 interface Option {
   id: number;
   text: string;
@@ -24,64 +26,55 @@ interface Question {
 interface ExamDetail {
   id: number;
   title: string;
-  duration: number;
+  duration: number; // en minutos
   questions: Question[];
 }
 
-export const TakeExamModal = ({ isOpen, onClose, examId, onExamSubmitted }: Props) => {
+export const TakeExamModal = ({ 
+  isOpen, 
+  onClose, 
+  examId, 
+  onExamSubmitted,
+  initialScore,      // Recibimos la nota si ya existe
+  isReviewMode = false // Flag para saber si es revisión
+}: Props) => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  
-  // 3. Estado tipado correctamente (Adiós 'any')
   const [exam, setExam] = useState<ExamDetail | null>(null);
   
-  // Mapa de respuestas: { questionId: optionId }
-  const [answers, setAnswers] = useState<Record<number, number>>({});
+  // ⏳ Estado del Timer
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   
-  // Estado para mostrar resultado final
+  const [answers, setAnswers] = useState<Record<number, number>>({});
   const [result, setResult] = useState<{ score: number } | null>(null);
 
-  useEffect(() => {
-    if (isOpen && examId) {
-      loadExam();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, examId]);
-
-  const loadExam = async () => {
+  // 1️⃣ Memoizamos loadExam
+  const loadExam = useCallback(async () => {
     setLoading(true);
     setResult(null);
     setAnswers({});
     try {
-      // TypeScript inferirá que 'data' debe ajustarse a ExamDetail al setearlo
       const data = await getExamById(examId);
       setExam(data);
+      setTimeLeft(data.duration * 60);
     } catch (error) {
       console.error("Error cargando examen", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [examId]);
 
-  const handleSelectOption = (questionId: number, optionId: number) => {
-    setAnswers(prev => ({
-      ...prev,
-      [questionId]: optionId
-    }));
-  };
-
-  const handleSubmit = async () => {
+  // 2️⃣ Memoizamos handleSubmit
+  const handleSubmit = useCallback(async (isAutoSubmit = false) => {
     if (!exam) return;
 
-    // Validar que respondió todo
-    if (Object.keys(answers).length < exam.questions.length) {
+    if (!isAutoSubmit && Object.keys(answers).length < exam.questions.length) {
       const confirm = window.confirm("No has respondido todas las preguntas. ¿Seguro que quieres enviar?");
       if (!confirm) return;
     }
 
     setSubmitting(true);
     try {
-      // Formatear respuestas para el backend
       const formattedAnswers = Object.entries(answers).map(([qId, oId]) => ({
         questionId: Number(qId),
         selectedOptionId: oId
@@ -92,7 +85,6 @@ export const TakeExamModal = ({ isOpen, onClose, examId, onExamSubmitted }: Prop
         answers: formattedAnswers
       });
 
-      // ¡ÉXITO! Mostramos el resultado
       setResult({ score: response.score });
       
     } catch (error) {
@@ -101,9 +93,55 @@ export const TakeExamModal = ({ isOpen, onClose, examId, onExamSubmitted }: Prop
     } finally {
       setSubmitting(false);
     }
+  }, [exam, answers, examId]);
+
+  // 3️⃣ Efecto Principal: Carga de Datos o Modo Revisión
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // LÓGICA DE REVISIÓN: Si ya lo tomó, mostramos el resultado directo
+    if (isReviewMode && initialScore !== undefined && initialScore !== null) {
+        setResult({ score: initialScore });
+        setLoading(false);
+        return; 
+    }
+
+    // Si es un intento nuevo, cargamos el examen
+    if (examId) {
+      loadExam();
+    }
+  }, [isOpen, examId, isReviewMode, initialScore, loadExam]);
+
+  // 4️⃣ Efecto del Timer
+  useEffect(() => {
+    // Si ya hay resultado (o estamos en review mode), paramos el timer
+    if (timeLeft === null || result) return; 
+
+    if (timeLeft === 0) {
+        handleSubmit(true);
+        return;
+    }
+
+    const timerId = setInterval(() => {
+        setTimeLeft(prev => (prev !== null ? prev - 1 : null));
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, [timeLeft, result, handleSubmit]);
+
+  const handleSelectOption = (questionId: number, optionId: number) => {
+    setAnswers(prev => ({ ...prev, [questionId]: optionId }));
+  };
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
   if (!isOpen) return null;
+
+  const timerColor = timeLeft && timeLeft < 60 ? 'text-red-600 animate-pulse' : 'text-gray-600';
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -113,11 +151,12 @@ export const TakeExamModal = ({ isOpen, onClose, examId, onExamSubmitted }: Prop
         <div className="p-5 border-b bg-gray-50 flex justify-between items-center">
           <div>
              <h2 className="text-xl font-bold text-gray-800">
-               {loading ? "Cargando..." : (result ? "Resultados del Examen" : exam?.title)}
+               {loading ? "Cargando..." : (result ? "Resultados" : exam?.title)}
              </h2>
-             {!loading && !result && (
-               <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-                 <Clock size={14}/> Duración: {exam?.duration} min
+             {!loading && !result && timeLeft !== null && (
+               <div className={`flex items-center gap-2 text-lg font-mono font-bold mt-1 ${timerColor}`}>
+                 <Clock size={20}/> 
+                 {formatTime(timeLeft)}
                </div>
              )}
           </div>
@@ -130,27 +169,31 @@ export const TakeExamModal = ({ isOpen, onClose, examId, onExamSubmitted }: Prop
           {loading ? (
             <div className="flex justify-center py-20"><Loader2 className="animate-spin text-blue-600" size={40}/></div>
           ) : result ? (
-            // VISTA DE RESULTADOS (DESPUÉS DE ENVIAR)
+            // VISTA RESULTADOS (Se muestra al enviar O al entrar en modo revisión)
             <div className="text-center py-10">
-               <div className="inline-flex items-center justify-center w-24 h-24 bg-blue-100 rounded-full mb-6">
-                 <span className="text-4xl font-bold text-blue-700">{result.score.toFixed(0)}</span>
+               <div className={`inline-flex items-center justify-center w-24 h-24 rounded-full mb-6 ${result.score >= 70 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                 <span className="text-4xl font-bold">{result.score.toFixed(0)}</span>
                </div>
                <h3 className="text-2xl font-bold text-gray-800 mb-2">
-                 {result.score >= 70 ? "¡Felicidades! Aprobaste" : "Has finalizado el examen"}
+                 {result.score >= 70 ? "¡Aprobado!" : "Reprobado"}
                </h3>
-               <p className="text-gray-500 mb-8">Tu calificación final ha sido registrada.</p>
+               <p className="text-gray-500 mb-8">
+                 {result.score >= 70 ? "Excelente trabajo." : "Sigue estudiando, tú puedes."}
+               </p>
                
                <button 
-                 onClick={() => { onExamSubmitted(); onClose(); }}
+                 onClick={() => { 
+                    if (!isReviewMode) onExamSubmitted(); // Solo recargamos si acabamos de enviar
+                    onClose(); 
+                 }}
                  className="bg-gray-800 text-white px-6 py-2 rounded-lg hover:bg-black transition"
                >
-                 Cerrar y Volver
+                 Cerrar
                </button>
             </div>
           ) : (
-            // VISTA DE PREGUNTAS
+            // VISTA PREGUNTAS (Solo si no hay resultado aún)
             <div className="space-y-8">
-              {/* 4. TypeScript ahora sabe que 'q' es Question */}
               {exam?.questions.map((q, idx) => (
                 <div key={q.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
                   <h4 className="font-bold text-lg text-gray-800 mb-4 flex gap-2">
@@ -161,7 +204,6 @@ export const TakeExamModal = ({ isOpen, onClose, examId, onExamSubmitted }: Prop
                   </h4>
                   
                   <div className="space-y-3 pl-2">
-                    {/* 5. TypeScript ahora sabe que 'opt' es Option */}
                     {q.options.map((opt) => (
                       <label 
                         key={opt.id} 
@@ -188,16 +230,15 @@ export const TakeExamModal = ({ isOpen, onClose, examId, onExamSubmitted }: Prop
           )}
         </div>
 
-        {/* FOOTER */}
+        {/* FOOTER (Oculto si hay resultado) */}
         {!loading && !result && (
           <div className="p-4 border-t bg-white flex justify-between items-center">
             <div className="text-sm text-gray-500 flex items-center gap-2">
                <AlertCircle size={16} />
-               {/* exam nunca es null aquí por la condición !loading, pero el operador ?. es seguro */}
                {Object.keys(answers).length} de {exam?.questions.length} respondidas
             </div>
             <button 
-              onClick={handleSubmit}
+              onClick={() => handleSubmit(false)}
               disabled={submitting}
               className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-70"
             >
