@@ -157,6 +157,7 @@ model Exam {
   
   questions   Question[]
   submissions ExamSubmission[]
+  showResults Boolean  @default(false)
 
   // Tiempos
   dueDate     DateTime? // Fecha límite opcional

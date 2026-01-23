@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../prisma/client';
 import { z } from 'zod';
+import { RoleName } from '@prisma/client'; // Asegúrate de importar esto
 
 // ------------------------------------------------------------------
 // ESQUEMAS ZOD
@@ -11,6 +12,8 @@ const createExamSchema = z.object({
   description: z.string().optional(),
   subjectId: z.number(),
   duration: z.number().optional(),
+  // 👇 NUEVO: Opción para permitir revisión
+  showResults: z.boolean().default(false),
   questions: z.array(z.object({
     text: z.string(),
     points: z.number().default(1),
@@ -47,6 +50,7 @@ export const createExam = async (req: Request, res: Response): Promise<void> => 
         duration: data.duration,
         subjectId: data.subjectId,
         teacherId: teacherId,
+        showResults: data.showResults, // 👈 Guardamos la preferencia
         questions: {
           create: data.questions.map(q => ({
             text: q.text,
@@ -78,7 +82,7 @@ export const getExamsBySubject = async (req: Request, res: Response) => {
       where: { subjectId: Number(subjectId) },
       include: {
         _count: { select: { questions: true } },
-        // 👇 TypeScript nos dijo que se llama 'submissions', así que usamos ese.
+        // 👇 Usamos la relación definida en el schema (generalmente 'submissions')
         submissions: {
            where: { studentId: userId },
            select: { id: true, score: true } 
@@ -87,8 +91,7 @@ export const getExamsBySubject = async (req: Request, res: Response) => {
     });
 
     const examsWithStatus = exams.map(exam => {
-        // Accedemos a .submissions porque así se llama en el include de arriba
-        // @ts-ignore (Seguridad extra por si TS se queja del tipo)
+        // @ts-ignore
         const userSubmission = exam.submissions && exam.submissions.length > 0 
             // @ts-ignore
             ? exam.submissions[0] 
@@ -108,26 +111,27 @@ export const getExamsBySubject = async (req: Request, res: Response) => {
   }
 };
 
-// 3. OBTENER EXAMEN INDIVIDUAL
+// 3. OBTENER EXAMEN INDIVIDUAL (Con Lógica de Revisión Segura)
 export const getExamById = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     // @ts-ignore
     const userId = req.user.userId;
+    // @ts-ignore
+    const role = req.user.role as RoleName;
 
-    // CORRECCIÓN: Usamos examSubmission
+    // Buscamos si ya entregó
     const existingSubmission = await prisma.examSubmission.findFirst({
         where: { examId: Number(id), studentId: userId }
     });
 
+    // Traemos el examen completo (incluyendo respuestas correctas por ahora)
     const exam = await prisma.exam.findUnique({
       where: { id: Number(id) },
       include: { 
         questions: { 
           include: { 
-            options: {
-              select: { id: true, text: true, isCorrect: !!existingSubmission } 
-            } 
+            options: true // Traemos todo, filtraremos abajo 👇
           } 
         } 
       }
@@ -138,19 +142,40 @@ export const getExamById = async (req: Request, res: Response): Promise<void> =>
        return;
     }
     
+    // 🧠 LÓGICA DE SEGURIDAD PARA VER RESPUESTAS
+    // Puede ver las respuestas correctas SI:
+    // 1. Es PROFESOR
+    // 2. O (Es ESTUDIANTE Y ya entregó Y el examen permite ver resultados)
+    const canSeeAnswers = 
+        role === 'TEACHER' || 
+        (!!existingSubmission && exam.showResults);
+
+    // Sanitizamos el objeto antes de enviarlo
+    const sanitizedQuestions = exam.questions.map(q => ({
+        ...q,
+        options: q.options.map(o => ({
+            id: o.id,
+            text: o.text,
+            // Solo enviamos isCorrect si tiene permiso, sino undefined/false
+            isCorrect: canSeeAnswers ? o.isCorrect : undefined 
+        }))
+    }));
+
     const responseData = {
         ...exam,
+        questions: sanitizedQuestions,
         isSubmitted: !!existingSubmission,
         score: existingSubmission?.score || null
     };
 
     res.json(responseData);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: 'Error cargando examen' });
   }
 };
 
-// 4. RESPONDER EXAMEN (Renombrado a submitExam para coincidir con tus rutas)
+// 4. RESPONDER EXAMEN (Lógica: Suma de Puntos)
 export const submitExam = async (req: Request, res: Response): Promise<void> => {
   try {
     // @ts-ignore
@@ -168,7 +193,6 @@ export const submitExam = async (req: Request, res: Response): Promise<void> => 
 
     if (!exam) { res.status(404).json({ message: "Examen no encontrado" }); return; }
 
-    // CORRECCIÓN: Usamos examSubmission
     const existing = await prisma.examSubmission.findFirst({
         where: { examId, studentId }
     });
@@ -179,36 +203,29 @@ export const submitExam = async (req: Request, res: Response): Promise<void> => 
     }
 
     let earnedPoints = 0;
-    let totalPossiblePoints = 0;
-
-    // Algoritmo de Calificación
+    
+    // Algoritmo de Calificación: Suma directa
     exam.questions.forEach(question => {
-      const qPoints = question.points || 1;
-      totalPossiblePoints += qPoints;
-
+      const qPoints = question.points || 1; // Valor de la pregunta
+      
       const studentAnswer = answers.find(a => a.questionId === question.id);
 
       if (studentAnswer) {
         const selectedOption = question.options.find(o => o.id === studentAnswer.selectedOptionId);
         if (selectedOption && selectedOption.isCorrect) {
-          earnedPoints += qPoints;
+          earnedPoints += qPoints; // Sumamos los puntos tal cual
         }
       }
     });
 
-    let finalScore = 0;
-    if (totalPossiblePoints > 0) {
-      finalScore = (earnedPoints / totalPossiblePoints) * 100;
-    }
+    // Nota final = Suma de puntos obtenidos
+    const finalScore = earnedPoints;
 
-    // CORRECCIÓN: Usamos examSubmission
     const submission = await prisma.examSubmission.create({
       data: {
         studentId,
         examId,
         score: finalScore,
-        // Si tu modelo requiere guardar 'answers', descomenta la siguiente línea adaptándola a tu esquema:
-        // answers: { create: answers.map(...) } 
       }
     });
 
@@ -217,5 +234,43 @@ export const submitExam = async (req: Request, res: Response): Promise<void> => 
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error procesando examen' });
+  }
+};
+
+// 5. OBTENER RESULTADOS DE UN EXAMEN (SOLO PROFESOR)
+export const getExamSubmissions = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params; // ID del examen
+    // @ts-ignore
+    const { userId, role } = req.user;
+
+    if (role !== 'TEACHER' && role !== 'ADMIN') {
+       res.status(403).json({ message: "No tienes permiso para ver estos resultados" });
+       return;
+    }
+
+    // Verificar que el examen pertenece al profesor (opcional pero recomendado)
+    const exam = await prisma.exam.findUnique({ where: { id: Number(id) } });
+    if (exam && exam.teacherId !== userId && role !== 'ADMIN') {
+       res.status(403).json({ message: "Este examen no te pertenece" });
+       return;
+    }
+
+    // Obtener las entregas con datos del estudiante
+    const submissions = await prisma.examSubmission.findMany({
+      where: { examId: Number(id) },
+      include: {
+        student: {
+          select: { id: true, name: true, email: true }
+        }
+      },
+      orderBy: { score: 'desc' } // Ordenar por mejor nota
+    });
+
+    res.json(submissions);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error cargando resultados" });
   }
 };

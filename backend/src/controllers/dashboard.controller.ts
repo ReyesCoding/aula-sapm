@@ -31,63 +31,99 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
     // 🎓 CASO 2: STUDENT
     if (role === RoleName.STUDENT) {
       
-      // 1. TAREAS: Contar pendientes y completadas
-      const pendingCount = await prisma.assignment.count({
+      // --- CONSULTAS PARALELAS PARA OPTIMIZAR ---
+      
+      // 1. TAREAS
+      const pendingAssignmentsPromise = prisma.assignment.count({
         where: { 
             studentId: userId,
             status: { in: ['PENDING', 'LATE'] } 
         }
       });
 
-      const completedCount = await prisma.assignment.count({
+      const completedAssignmentsPromise = prisma.assignment.count({
         where: { 
             studentId: userId,
             status: { in: ['SUBMITTED', 'GRADED'] } 
         }
       });
 
-      // 2. CALCULAR PROMEDIO
-      
-      // A) Traer notas de Tareas Calificadas
-      const gradedAssignments = await prisma.assignment.findMany({
-        where: { 
-            studentId: userId,
-            status: 'GRADED',
-            grade: { not: null } 
-        },
+      // 2. EXÁMENES (Lógica compleja para saber pendientes)
+      // Primero: ¿En qué cursos estoy?
+      const myEnrollmentsPromise = prisma.enrollment.findMany({
+        where: { studentId: userId },
+        select: { courseId: true }
+      });
+
+      // Segundo: ¿Cuántos exámenes he hecho?
+      const myExamSubmissionsPromise = prisma.examSubmission.count({
+        where: { studentId: userId }
+      });
+
+      // 3. CALIFICACIONES
+      const gradedAssignmentsPromise = prisma.assignment.findMany({
+        where: { studentId: userId, status: 'GRADED', grade: { not: null } },
         select: { grade: true }
       });
 
-      // B) Traer notas de Exámenes (Usamos la tabla ExamSubmission)
-      const gradedExams = await prisma.examSubmission.findMany({
+      const gradedExamsPromise = prisma.examSubmission.findMany({
         where: { studentId: userId },
         select: { score: true }
       });
 
-      // C) Unificar y Calcular (Solución del error TypeScript)
-      // Creamos un array estrictamente de números. Si viene null, usamos 0.
+      // EJECUTAMOS TODO JUNTO 🚀
+      const [
+        pendingAssignments, 
+        completedAssignments, 
+        myEnrollments, 
+        myExamSubmissions,
+        gradedAssignments,
+        gradedExams
+      ] = await Promise.all([
+        pendingAssignmentsPromise,
+        completedAssignmentsPromise,
+        myEnrollmentsPromise,
+        myExamSubmissionsPromise,
+        gradedAssignmentsPromise,
+        gradedExamsPromise
+      ]);
+
+      // --- PROCESAMIENTO DE DATOS ---
+
+      // Calcular Exámenes Disponibles Totales en mis cursos
+      const myCourseIds = myEnrollments.map(e => e.courseId);
+      const totalExamsAvailable = await prisma.exam.count({
+        where: { subjectId: { in: myCourseIds } }
+      });
+
+      // Exámenes Pendientes = Disponibles - Realizados
+      const pendingExams = Math.max(0, totalExamsAvailable - myExamSubmissions);
+
+      // Totales Finales
+      const totalPending = pendingAssignments + pendingExams;
+      const totalCompleted = completedAssignments + myExamSubmissions;
+
+      // Cálculo de Promedio
       const allGrades: number[] = [
         ...gradedAssignments.map(a => a.grade ?? 0), 
         ...gradedExams.map(e => e.score ?? 0)       
       ];
 
       let averageDisplay = "-";
-      
       if (allGrades.length > 0) {
-        // Ahora TypeScript sabe que 'a' y 'b' siempre son números
         const sum = allGrades.reduce((a, b) => a + b, 0);
         const avg = sum / allGrades.length;
-        averageDisplay = avg.toFixed(1); 
+        averageDisplay = avg.toFixed(1).replace(/\.0$/, ''); // "85.0" -> "85"
       }
 
-      // Cálculo de progreso visual
-      const totalActivities = pendingCount + completedCount;
-      const progress = totalActivities > 0 ? Math.round((completedCount / totalActivities) * 100) : 0;
+      // Progreso Visual
+      const totalActivities = totalPending + totalCompleted;
+      const progress = totalActivities > 0 ? Math.round((totalCompleted / totalActivities) * 100) : 0;
 
       res.json({
         stats: [
-          { label: 'Tareas Pendientes', value: pendingCount, icon: 'clock', color: 'yellow' },
-          { label: 'Entregas Realizadas', value: completedCount, icon: 'check', color: 'green' },
+          { label: 'Actividades Pendientes', value: totalPending, icon: 'clock', color: 'yellow' },
+          { label: 'Entregas Realizadas', value: totalCompleted, icon: 'check', color: 'green' },
           { label: 'Progreso General', value: `${progress}%`, icon: 'trending-up', color: 'blue' },
           { label: 'Promedio General', value: averageDisplay, icon: 'award', color: 'purple' } 
         ]
@@ -97,28 +133,43 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
 
     // 👨‍🏫 CASO 3: TEACHER
     if (role === RoleName.TEACHER) {
-       const myCourses = await prisma.course.count({ where: { teacherId: userId } });
-       const myAssignments = await prisma.assignment.count({ where: { creatorId: userId } });
-       const toGrade = await prisma.assignment.count({
+       // Consultas en paralelo
+       const myCoursesPromise = prisma.course.count({ where: { teacherId: userId } });
+       const myAssignmentsPromise = prisma.assignment.count({ where: { creatorId: userId } });
+       
+       // Tareas por calificar
+       const assignmentsToGradePromise = prisma.assignment.count({
          where: { creatorId: userId, status: 'SUBMITTED' }
        });
 
-       const uniqueStudents = await prisma.enrollment.findMany({
-         where: {
-           course: { teacherId: userId }
-         },
+       // Alumnos únicos
+       const uniqueStudentsPromise = prisma.enrollment.findMany({
+         where: { course: { teacherId: userId } },
          distinct: ['studentId'],
          select: { studentId: true }
        });
+
+       // Exámenes realizados (Podrías querer saber cuántos hay para revisar)
+       const examsToReviewPromise = prisma.examSubmission.count({
+            where: { exam: { teacherId: userId } } // Asumiendo que Exam tiene teacherId
+       });
+
+       const [myCourses, myAssignments, assignmentsToGrade, uniqueStudents, examsToReview] = await Promise.all([
+            myCoursesPromise,
+            myAssignmentsPromise,
+            assignmentsToGradePromise,
+            uniqueStudentsPromise,
+            examsToReviewPromise
+       ]);
        
-       const totalStudentsCount = uniqueStudents.length;
+       const totalToReview = assignmentsToGrade + examsToReview;
 
        res.json({
         stats: [
-            { label: 'Por Calificar', value: toGrade, icon: 'alert', color: 'red' },
+            { label: 'Por Revisar', value: totalToReview, icon: 'alert', color: 'red' },
             { label: 'Mis Cursos', value: myCourses, icon: 'book', color: 'blue' },
             { label: 'Tareas Creadas', value: myAssignments, icon: 'file', color: 'purple' },
-            { label: 'Alumnos Totales', value: totalStudentsCount, icon: 'users', color: 'green' }
+            { label: 'Alumnos Totales', value: uniqueStudents.length, icon: 'users', color: 'green' }
         ]
       });
       return;
