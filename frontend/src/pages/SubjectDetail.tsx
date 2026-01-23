@@ -8,7 +8,7 @@ import { Loader2, ArrowLeft, Plus, FileText, BrainCircuit } from 'lucide-react';
 // 👇 IMPORTAMOS TODOS LOS MODALES
 import { CreateExamModal } from '../components/CreateExamModal';
 import { CreateTaskModal } from '../components/CreateTaskModal';
-import { TakeExamModal } from '../components/TakeExamModal'; // 👈 Asegúrate de tener este import
+import { TakeExamModal } from '../components/TakeExamModal';
 
 interface AssignmentSummary {
   id: number;
@@ -29,7 +29,13 @@ export default function SubjectDetail() {
   // --- ESTADOS DE LOS MODALES ---
   const [isExamModalOpen, setIsExamModalOpen] = useState(false); // Profesor: Crear Examen
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false); // Profesor: Crear Tarea
-  const [takeExamId, setTakeExamId] = useState<number | null>(null); // Estudiante: ID del examen a tomar
+  
+  // 👇 CAMBIO IMPORTANTE: Estado para manejar la info del examen seleccionado (ID, Nota, Estado)
+  const [selectedExamInfo, setSelectedExamInfo] = useState<{
+    id: number; 
+    score: number | null; 
+    isSubmitted: boolean;
+  } | null>(null);
   
   const [assignments, setAssignments] = useState<AssignmentSummary[]>([]);
   const [exams, setExams] = useState<ExamSummary[]>([]);
@@ -51,7 +57,6 @@ export default function SubjectDetail() {
       if (tasksData.length > 0) {
         setSubjectName(tasksData[0].subject.name);
       } else {
-        // Fallback si no hay tareas para sacar el nombre
         setSubjectName(`Aula Virtual ${id}`);
       }
       
@@ -171,31 +176,44 @@ export default function SubjectDetail() {
                     </p>
                     <div className="mt-3 flex justify-end">
                       
-                      {/* 👇 AQUÍ ESTÁ LA LÓGICA DEL BOTÓN DE ESTUDIANTE */}
+                      {/* 👇 AQUÍ ESTÁ LA LÓGICA DEL BOTÓN DE ESTUDIANTE ACTUALIZADA */}
                       {user?.role === 'STUDENT' ? (
-    // 👇 LÓGICA DE UN SOLO INTENTO
-    exam.isSubmitted ? (
-      <div className="text-right">
-        <span className="text-xs font-bold text-gray-500 uppercase block mb-1">Calificación</span>
-        <span className={`px-3 py-1 rounded text-sm font-bold ${
-            (exam.score || 0) >= 70 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-        }`}>
-          {exam.score?.toFixed(0)} / 100
-        </span>
-      </div>
-    ) : (
-      <button 
-        onClick={() => setTakeExamId(exam.id)}
-        className="text-sm bg-purple-600 text-white px-3 py-1.5 rounded hover:bg-purple-700 transition shadow-sm"
-      >
-        Comenzar Examen
-      </button>
-    )
-  ) : (
-    <span className="text-xs text-gray-400 italic">Vista Profesor</span>
-  )}
-  
-</div>
+                        exam.isSubmitted ? (
+                          <div className="flex items-center justify-end gap-3">
+                            {/* Pill de Nota NEUTRO (Azul) para no confundir con rojo/verde */}
+                            <span className="px-3 py-1 rounded text-sm font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                              {exam.score} pts
+                            </span>
+                            
+                            {/* Botón para Ver Examen (Modo Revisión) */}
+                            <button 
+                              onClick={() => setSelectedExamInfo({ 
+                                id: exam.id, 
+                                score: exam.score, 
+                                isSubmitted: true 
+                              })} 
+                              className="text-gray-500 hover:text-blue-600 underline text-sm"
+                            >
+                              Ver examen
+                            </button>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={() => setSelectedExamInfo({ 
+                                id: exam.id, 
+                                score: null, 
+                                isSubmitted: false 
+                            })}
+                            className="text-sm bg-purple-600 text-white px-3 py-1.5 rounded hover:bg-purple-700 transition shadow-sm"
+                          >
+                            Comenzar Examen
+                          </button>
+                        )
+                      ) : (
+                        <span className="text-xs text-gray-400 italic">Vista Profesor</span>
+                      )}
+                      
+                    </div>
                   </div>
                 ))}
               </div>
@@ -203,7 +221,7 @@ export default function SubjectDetail() {
           )}
         </div>
 
-        {/* --- SECCIÓN DE MODALES (Asegúrate de que estén aquí abajo) --- */}
+        {/* --- SECCIÓN DE MODALES --- */}
         
         {/* 1. Modal Profesor: Crear Examen */}
         <CreateExamModal 
@@ -222,15 +240,15 @@ export default function SubjectDetail() {
            />
         )}
 
-        {/* 3. Modal Estudiante: Tomar Examen (FALTABA ESTE) */}
-        {takeExamId && (
+        {/* 3. Modal Estudiante: Tomar/Ver Examen (ACTUALIZADO) */}
+        {selectedExamInfo && (
           <TakeExamModal
-            isOpen={!!takeExamId}
-            onClose={() => setTakeExamId(null)}
-            examId={takeExamId}
-            onExamSubmitted={() => {
-               loadData(); 
-            }}
+            isOpen={!!selectedExamInfo}
+            onClose={() => setSelectedExamInfo(null)}
+            examId={selectedExamInfo.id}
+            initialScore={selectedExamInfo.score}       // 👈 Nuevo Prop
+            isReviewMode={selectedExamInfo.isSubmitted} // 👈 Nuevo Prop
+            onExamSubmitted={loadData}
           />
         )}
 

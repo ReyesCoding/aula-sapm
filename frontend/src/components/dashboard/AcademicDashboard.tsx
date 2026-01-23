@@ -1,27 +1,63 @@
 import { useEffect, useState } from 'react';
-import { Loader2, BookOpen, TrendingUp, ArrowRight } from 'lucide-react'; // 1. Limpiamos imports no usados
+import { 
+  Loader2, BookOpen, TrendingUp, ArrowRight, 
+  Clock, CheckCircle, Award, AlertCircle, FileText, Users, Activity 
+} from 'lucide-react'; 
 import { useAuth } from '../../context/AuthContext';
 import { getSubjects, type Subject } from '../../services/subject.service';
 import { getDashboardStats } from '../../services/dashboard.service';
 import { useNavigate } from 'react-router-dom';
-import { StatsGrid } from '../StatsGrid';
-import type { DashboardStats } from '../../types/dashboard.types'; // 2. Importamos el tipo correcto
+import type { DashboardStats } from '../../types/dashboard.types';
+
+// Helper para mapear los strings del backend a componentes de iconos
+const getIconComponent = (iconName: string) => {
+  // 👇 CORRECCIÓN: Usamos React.ElementType en lugar de 'any'
+  const icons: Record<string, React.ElementType> = {
+    'clock': Clock,
+    'check': CheckCircle,
+    'trending-up': TrendingUp,
+    'award': Award,
+    'alert': AlertCircle,
+    'file': FileText,
+    'book': BookOpen,
+    'users': Users,
+    'activity': Activity
+  };
+  return icons[iconName] || Activity;
+};
+
+// Helper para colores de fondo dinámicos
+const getColorClasses = (colorName: string) => {
+  const colors: Record<string, string> = {
+    'blue': 'bg-blue-50 text-blue-600 border-blue-100',
+    'green': 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    'purple': 'bg-purple-50 text-purple-600 border-purple-100',
+    'yellow': 'bg-amber-50 text-amber-600 border-amber-100',
+    'red': 'bg-red-50 text-red-600 border-red-100',
+    'gray': 'bg-gray-50 text-gray-600 border-gray-200',
+  };
+  return colors[colorName] || colors['gray'];
+};
 
 export const AcademicDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   
-  // 3. Tipado estricto para las materias
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  
-  // 4. Tipado estricto para stats (Adiós 'any')
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Función para hacer scroll suave a la lista de cursos
+  const scrollToCourses = () => {
+    const section = document.getElementById('courses-section');
+    if (section) {
+      section.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Carga simultánea de Materias y Estadísticas
         const [subjectsData, statsData] = await Promise.all([
           getSubjects(),
           getDashboardStats()
@@ -55,24 +91,51 @@ export const AcademicDashboard = () => {
               Bienvenido a tu panel de control académico. Tienes <span className="font-bold text-white">{subjects.length} aulas activas</span> hoy.
             </p>
           </div>
-          {/* Decoración de fondo */}
           <div className="absolute top-0 right-0 -mt-10 -mr-10 w-64 h-64 bg-white opacity-10 rounded-full blur-3xl"></div>
           <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-40 h-40 bg-purple-500 opacity-20 rounded-full blur-2xl"></div>
         </div>
 
-        {/* 2. Grid de Estadísticas */}
+        {/* 2. Grid de Estadísticas Interactivo */}
         {stats && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             <h3 className="text-lg font-bold text-gray-700 mb-4 flex items-center gap-2">
               <TrendingUp size={20} className="text-indigo-600"/> Resumen de Actividad
             </h3>
-            {/* Renderizamos las estadísticas recuperadas */}
-            <StatsGrid stats={stats.stats} />
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {stats.stats.map((stat, idx) => {
+                const Icon = getIconComponent(stat.icon);
+                const colorClass = getColorClasses(stat.color);
+                
+                return (
+                  <div 
+                    key={idx}
+                    // 👇 INTERACTIVIDAD: Clickeable para navegar
+                    onClick={() => {
+                        // Si es "Cursos" o "Pendientes", bajamos a la lista
+                        if (stat.label.includes("Cursos") || stat.label.includes("Pendientes")) {
+                            scrollToCourses();
+                        }
+                    }}
+                    className={`bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 transition-all duration-300 hover:shadow-md hover:scale-[1.02] cursor-pointer`}
+                  >
+                    <div className={`p-3 rounded-lg ${colorClass}`}>
+                      <Icon size={24} />
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">{stat.label}</p>
+                      <p className="text-2xl font-bold text-gray-800">{stat.value}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
         {/* 3. Grid de Aulas (Diseño Moderno) */}
-        <div>
+        {/* 👇 ID para el scroll automático */}
+        <div id="courses-section">
            <div className="flex justify-between items-end border-b border-gray-200 pb-4 mb-6">
               <h3 className="font-bold text-gray-800 text-xl flex items-center gap-2">
                 <BookOpen size={24} className="text-indigo-600"/> Mis Aulas Virtuales

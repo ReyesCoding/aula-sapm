@@ -1,3 +1,4 @@
+import axios from 'axios';
 import api from './api';
 
 export interface ExamSummary {
@@ -53,4 +54,24 @@ export const getExamById = async (id: number) => {
 export const submitExamResponses = async (data: SubmitExamDTO) => {
   const response = await api.post('/exams/submit', data);
   return response.data; // El backend nos devolverá la nota (score)
+};
+
+// ... imports anteriores ...
+
+// 👇 Interfaces para los resultados
+export interface ExamSubmissionResult {
+  id: number;
+  score: number;
+  student: {
+    id: number;
+    name: string;
+    email: string;
+  };
+  submittedAt?: string; // Opcional, si tienes fecha de entrega
+}
+
+// 👇 Función para obtener los resultados de un examen (Solo Profesor)
+export const getExamSubmissions = async (examId: number): Promise<ExamSubmissionResult[]> => {
+  const response = await axios.get(`/exams/${examId}/submissions`);
+  return response.data;
 };

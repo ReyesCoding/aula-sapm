@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { X, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Clock, AlertCircle, Loader2, Check } from 'lucide-react'; // 👈 Eliminado XCircle
 import { getExamById, submitExamResponses } from '../services/exam.service';
 
 interface Props {
@@ -7,7 +7,6 @@ interface Props {
   onClose: () => void;
   examId: number;
   onExamSubmitted: () => void;
-  // 👇 Nuevas props para modo revisión
   initialScore?: number | null;
   isReviewMode?: boolean;
 }
@@ -15,18 +14,21 @@ interface Props {
 interface Option {
   id: number;
   text: string;
+  isCorrect?: boolean; // Opcional, solo viene si showResults=true
 }
 
 interface Question {
   id: number;
   text: string;
+  points: number; 
   options: Option[];
 }
 
 interface ExamDetail {
   id: number;
   title: string;
-  duration: number; // en minutos
+  duration: number;
+  showResults: boolean;
   questions: Question[];
 }
 
@@ -35,34 +37,39 @@ export const TakeExamModal = ({
   onClose, 
   examId, 
   onExamSubmitted,
-  initialScore,      // Recibimos la nota si ya existe
-  isReviewMode = false // Flag para saber si es revisión
+  initialScore,      
+  isReviewMode = false 
 }: Props) => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [exam, setExam] = useState<ExamDetail | null>(null);
   
-  // ⏳ Estado del Timer
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
-  
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [result, setResult] = useState<{ score: number } | null>(null);
 
   // 1️⃣ Memoizamos loadExam
   const loadExam = useCallback(async () => {
     setLoading(true);
-    setResult(null);
-    setAnswers({});
+    // Solo reseteamos si NO es revisión, para mantener el score inicial si existe
+    if (!isReviewMode) {
+        setResult(null);
+        setAnswers({});
+    }
+
     try {
       const data = await getExamById(examId);
       setExam(data);
-      setTimeLeft(data.duration * 60);
+      // Solo iniciamos el timer si es un intento nuevo
+      if (!isReviewMode && !initialScore) {
+          setTimeLeft(data.duration * 60);
+      }
     } catch (error) {
       console.error("Error cargando examen", error);
     } finally {
       setLoading(false);
     }
-  }, [examId]);
+  }, [examId, isReviewMode, initialScore]);
 
   // 2️⃣ Memoizamos handleSubmit
   const handleSubmit = useCallback(async (isAutoSubmit = false) => {
@@ -95,26 +102,21 @@ export const TakeExamModal = ({
     }
   }, [exam, answers, examId]);
 
-  // 3️⃣ Efecto Principal: Carga de Datos o Modo Revisión
+  // 3️⃣ Efecto Principal
   useEffect(() => {
     if (!isOpen) return;
 
-    // LÓGICA DE REVISIÓN: Si ya lo tomó, mostramos el resultado directo
+    // SIEMPRE cargamos el examen para tener los metadatos (preguntas, puntos, showResults)
+    loadExam();
+
+    // Si es revisión, establecemos el resultado visual inmediatamente
     if (isReviewMode && initialScore !== undefined && initialScore !== null) {
         setResult({ score: initialScore });
-        setLoading(false);
-        return; 
-    }
-
-    // Si es un intento nuevo, cargamos el examen
-    if (examId) {
-      loadExam();
     }
   }, [isOpen, examId, isReviewMode, initialScore, loadExam]);
 
   // 4️⃣ Efecto del Timer
   useEffect(() => {
-    // Si ya hay resultado (o estamos en review mode), paramos el timer
     if (timeLeft === null || result) return; 
 
     if (timeLeft === 0) {
@@ -151,7 +153,7 @@ export const TakeExamModal = ({
         <div className="p-5 border-b bg-gray-50 flex justify-between items-center">
           <div>
              <h2 className="text-xl font-bold text-gray-800">
-               {loading ? "Cargando..." : (result ? "Resultados" : exam?.title)}
+               {loading ? "Cargando..." : (isReviewMode ? `Revisión: ${exam?.title}` : exam?.title)}
              </h2>
              {!loading && !result && timeLeft !== null && (
                <div className={`flex items-center gap-2 text-lg font-mono font-bold mt-1 ${timerColor}`}>
@@ -169,58 +171,121 @@ export const TakeExamModal = ({
           {loading ? (
             <div className="flex justify-center py-20"><Loader2 className="animate-spin text-blue-600" size={40}/></div>
           ) : result ? (
-            // VISTA RESULTADOS (Se muestra al enviar O al entrar en modo revisión)
-            <div className="text-center py-10">
-               <div className={`inline-flex items-center justify-center w-24 h-24 rounded-full mb-6 ${result.score >= 70 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                 <span className="text-4xl font-bold">{result.score.toFixed(0)}</span>
-               </div>
-               <h3 className="text-2xl font-bold text-gray-800 mb-2">
-                 {result.score >= 70 ? "¡Aprobado!" : "Reprobado"}
-               </h3>
-               <p className="text-gray-500 mb-8">
-                 {result.score >= 70 ? "Excelente trabajo." : "Sigue estudiando, tú puedes."}
-               </p>
-               
-               <button 
-                 onClick={() => { 
-                    if (!isReviewMode) onExamSubmitted(); // Solo recargamos si acabamos de enviar
-                    onClose(); 
-                 }}
-                 className="bg-gray-800 text-white px-6 py-2 rounded-lg hover:bg-black transition"
-               >
-                 Cerrar
-               </button>
-            </div>
+            // VISTA RESULTADOS
+            (() => {
+              const maxScore = exam?.questions.reduce((acc, q) => acc + (q.points || 1), 0) || 0;
+              const percentage = maxScore > 0 ? (result.score / maxScore) * 100 : 0;
+              const isPassed = percentage >= 70;
+
+              return (
+                <div className="space-y-8">
+                   {/* Tarjeta de Calificación */}
+                   <div className="text-center py-8 bg-white rounded-2xl shadow-sm border border-gray-100">
+                      <div className={`inline-flex items-center justify-center w-32 h-32 rounded-full mb-4 border-4 ${isPassed ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                        <div className="flex flex-col items-center">
+                          <span className="text-4xl font-bold">{result.score.toFixed(1).replace(/\.0$/, '')}</span>
+                          <span className="text-[10px] font-bold uppercase opacity-60 mt-1">de {maxScore} pts</span>
+                        </div>
+                      </div>
+                      
+                      <h3 className="text-2xl font-bold text-gray-800 mb-1">
+                        {isPassed ? "¡Aprobado!" : "Reprobado"}
+                      </h3>
+                      <p className="text-gray-500">
+                        Obtuviste el <strong className="text-gray-700">{percentage.toFixed(0)}%</strong> de la calificación.
+                      </p>
+                   </div>
+
+                   {/* DETALLE DE RESPUESTAS (Solo si es revisión y está habilitado) */}
+                   {isReviewMode && exam?.showResults ? (
+                       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+                          <h4 className="font-bold text-gray-700 border-b pb-2 flex items-center gap-2">
+                             <Check size={18} className="text-green-600"/> Respuestas Correctas
+                          </h4>
+                          {exam.questions.map((q, idx) => (
+                             <div key={q.id} className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                                <p className="font-bold text-gray-800 mb-3 flex gap-2">
+                                   <span className="text-blue-600">#{idx+1}</span> {q.text} 
+                                   <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded h-fit ml-auto">{q.points} pts</span>
+                                </p>
+                                <div className="space-y-2">
+                                   {q.options.map(opt => (
+                                      <div key={opt.id} className={`p-2 rounded border flex justify-between items-center ${
+                                          opt.isCorrect 
+                                            ? 'bg-green-50 border-green-200 text-green-800 font-medium' 
+                                            : 'border-transparent text-gray-400'
+                                      }`}>
+                                         <span>{opt.text}</span>
+                                         {opt.isCorrect && <Check size={16} className="text-green-600" />}
+                                      </div>
+                                   ))}
+                                </div>
+                             </div>
+                          ))}
+                       </div>
+                   ) : isReviewMode ? (
+                       <div className="text-center p-6 bg-blue-50 text-blue-800 rounded-lg text-sm flex flex-col items-center">
+                           <AlertCircle className="mb-2" size={24}/>
+                           <p>El profesor no ha habilitado la revisión detallada de respuestas para este examen.</p>
+                       </div>
+                   ) : null}
+
+                   <div className="text-center pt-4">
+                     <button 
+                       onClick={() => { 
+                          if (!isReviewMode) onExamSubmitted(); 
+                          onClose(); 
+                       }}
+                       className="bg-gray-800 text-white px-8 py-3 rounded-lg hover:bg-black transition font-bold shadow-lg w-full sm:w-auto"
+                     >
+                       Cerrar
+                     </button>
+                   </div>
+                </div>
+              );
+            })()
           ) : (
-            // VISTA PREGUNTAS (Solo si no hay resultado aún)
+            // VISTA PREGUNTAS (Modo Tomar Examen)
             <div className="space-y-8">
               {exam?.questions.map((q, idx) => (
-                <div key={q.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                  <h4 className="font-bold text-lg text-gray-800 mb-4 flex gap-2">
-                    <span className="bg-blue-100 text-blue-700 text-sm px-2 py-0.5 rounded flex items-center h-fit mt-1">
-                      {idx + 1}
+                <div key={q.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition">
+                  <div className="flex justify-between items-start gap-4 mb-4">
+                    <h4 className="font-bold text-lg text-gray-800 flex gap-3">
+                        <span className="bg-blue-100 text-blue-700 text-sm font-bold px-2.5 py-1 rounded-lg flex items-center h-fit">
+                        {idx + 1}
+                        </span>
+                        <span className="mt-0.5">{q.text}</span>
+                    </h4>
+                    <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded self-start whitespace-nowrap">
+                        {q.points || 1} pts
                     </span>
-                    {q.text}
-                  </h4>
+                  </div>
                   
                   <div className="space-y-3 pl-2">
                     {q.options.map((opt) => (
                       <label 
                         key={opt.id} 
-                        className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
+                        className={`flex items-center p-4 rounded-xl border cursor-pointer transition-all ${
                           answers[q.id] === opt.id 
-                            ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' 
-                            : 'border-gray-200 hover:bg-gray-50'
+                            ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500 shadow-sm' 
+                            : 'border-gray-200 hover:bg-gray-50 hover:border-gray-300'
                         }`}
                       >
+                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center mr-3 transition-colors ${
+                            answers[q.id] === opt.id ? 'border-blue-600 bg-blue-600' : 'border-gray-400'
+                        }`}>
+                            {answers[q.id] === opt.id && <div className="w-2 h-2 bg-white rounded-full" />}
+                        </div>
                         <input 
                           type="radio" 
                           name={`question-${q.id}`} 
-                          className="w-4 h-4 text-blue-600"
+                          className="hidden" 
                           onChange={() => handleSelectOption(q.id, opt.id)}
                           checked={answers[q.id] === opt.id}
                         />
-                        <span className="ml-3 text-gray-700">{opt.text}</span>
+                        <span className={`text-base ${answers[q.id] === opt.id ? 'text-blue-900 font-medium' : 'text-gray-700'}`}>
+                            {opt.text}
+                        </span>
                       </label>
                     ))}
                   </div>
@@ -230,7 +295,7 @@ export const TakeExamModal = ({
           )}
         </div>
 
-        {/* FOOTER (Oculto si hay resultado) */}
+        {/* FOOTER (Solo visible si no hay resultados) */}
         {!loading && !result && (
           <div className="p-4 border-t bg-white flex justify-between items-center">
             <div className="text-sm text-gray-500 flex items-center gap-2">
