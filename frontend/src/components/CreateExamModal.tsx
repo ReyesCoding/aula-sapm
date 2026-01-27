@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Plus, Trash2, CheckCircle, Loader2 } from 'lucide-react';
+import { X, Plus, Trash2, CheckCircle, Loader2, Calendar, Eye } from 'lucide-react';
 import { createExam, type CreateExamDTO } from '../services/exam.service';
 
 interface Props {
@@ -31,9 +31,13 @@ const emptyQuestion: QuestionState = {
 
 export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props) => {
   const [loading, setLoading] = useState(false);
+  
+  // Estados del Formulario
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [duration, setDuration] = useState(60);
+  const [dueDate, setDueDate] = useState(""); 
+  const [showResults, setShowResults] = useState(false);
   
   const [questions, setQuestions] = useState<QuestionState[]>([{ ...emptyQuestion }]);
 
@@ -94,20 +98,26 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
 
     setLoading(true);
     try {
+      // ✅ FIX: Ya no necesitamos @ts-ignore porque actualizamos CreateExamDTO
       const payload: CreateExamDTO = {
         title,
         description,
         subjectId,
         duration,
+        dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
+        showResults, 
         questions
       };
       
       await createExam(payload);
       onSuccess(); 
       onClose();
+      
       // Reset form
       setTitle("");
       setDescription("");
+      setDueDate("");
+      setShowResults(false);
       setQuestions([{ ...emptyQuestion }]);
     } catch (error) {
       console.error(error);
@@ -132,7 +142,7 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
           
           {/* Datos Generales */}
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Título del Examen</label>
                     <input 
@@ -141,22 +151,53 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
                         placeholder="Ej: Parcial de Matemáticas I"
                     />
                 </div>
+                
+                {/* Duración */}
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Duración (mins)</label>
                     <input 
                         type="number" value={duration} onChange={e => setDuration(Number(e.target.value))}
                         className="w-full border rounded-lg p-2"
+                        min="1"
+                    />
+                </div>
+
+                {/* Fecha Límite */}
+                <div>
+                    {/* ✅ FIX: Eliminada la clase 'block' que causaba conflicto con 'flex' */}
+                    <label className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                        <Calendar size={14}/> Fecha Límite (Opcional)
+                    </label>
+                    <input 
+                        type="datetime-local" 
+                        value={dueDate} 
+                        onChange={e => setDueDate(e.target.value)}
+                        className="w-full border rounded-lg p-2 text-sm text-gray-600"
                     />
                 </div>
             </div>
             
+            {/* Descripción */}
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Descripción (Opcional)</label>
                 <input 
                     value={description} onChange={e => setDescription(e.target.value)}
                     className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm" 
-                    placeholder="Instrucciones breves para el estudiante..."
+                    placeholder="Instrucciones breves..."
                 />
+            </div>
+
+            {/* Switch Revisión (Configuración Inicial) */}
+            <div className="flex items-center gap-3 bg-blue-50 p-3 rounded-lg border border-blue-100">
+                <div className={`w-10 h-6 rounded-full p-1 cursor-pointer transition-colors ${showResults ? 'bg-blue-600' : 'bg-gray-300'}`} onClick={() => setShowResults(!showResults)}>
+                    <div className={`bg-white w-4 h-4 rounded-full shadow-sm transform transition-transform ${showResults ? 'translate-x-4' : ''}`} />
+                </div>
+                <div>
+                    <span className="text-sm font-bold text-gray-700 flex items-center gap-1">
+                        <Eye size={14}/> Permitir Revisión
+                    </span>
+                    <p className="text-xs text-gray-500">Si activas esto, los alumnos verán las respuestas correctas al terminar.</p>
+                </div>
             </div>
           </div>
 
@@ -168,7 +209,6 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
                 <h3 className="font-bold text-gray-700 flex items-center gap-2">
                 📝 Preguntas ({questions.length})
                 </h3>
-                {/* Contador de puntos totales */}
                 <span className="text-sm bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold">
                     Total: {questions.reduce((acc, q) => acc + (q.points || 0), 0)} pts
                 </span>
@@ -177,7 +217,6 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
             {questions.map((q, qIdx) => (
               <div key={qIdx} className="bg-gray-50 p-4 rounded-xl border border-gray-200 relative group transition-all hover:shadow-md">
                 
-                {/* 🗑️ FIX: Botón Eliminar Flotante (Fuera del contenido) */}
                 <button 
                   onClick={() => removeQuestion(qIdx)}
                   className="absolute -top-3 -right-3 bg-white shadow-sm border border-gray-200 p-2 rounded-full text-gray-400 hover:text-red-500 hover:border-red-200 hover:shadow-md transition z-10"
@@ -186,10 +225,9 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
                   <Trash2 size={16} />
                 </button>
 
-                {/* Header de la Pregunta: Texto + Puntos */}
+                {/* Header Pregunta */}
                 <div className="mb-4">
                   <div className="flex gap-4 items-start">
-                      {/* Input Texto Pregunta */}
                       <div className="flex-1">
                         <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">
                             Pregunta {qIdx + 1}
@@ -197,11 +235,10 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
                         <input 
                           value={q.text} onChange={e => updateQuestionText(qIdx, e.target.value)}
                           className="w-full bg-transparent border-b border-gray-300 focus:border-blue-500 outline-none py-1 font-medium text-gray-800 text-lg placeholder-gray-400"
-                          placeholder="¿Cuál es la capital de..."
+                          placeholder="Texto de la pregunta..."
                         />
                       </div>
 
-                      {/* Input Puntos (Separado y Estilizado) */}
                       <div className="w-24 flex flex-col items-center p-2 bg-white rounded-lg border border-gray-200 shadow-sm">
                         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
                             PUNTOS
@@ -229,7 +266,6 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
                       <button 
                         onClick={() => setCorrectOption(qIdx, oIdx)}
                         className={`p-1 rounded-full transition-all ${opt.isCorrect ? 'text-green-600 bg-green-100 ring-2 ring-green-500 ring-offset-1' : 'text-gray-300 hover:text-gray-400'}`}
-                        title={opt.isCorrect ? "Respuesta correcta" : "Marcar como correcta"}
                       >
                         <CheckCircle size={22} fill={opt.isCorrect ? "currentColor" : "none"} />
                       </button>

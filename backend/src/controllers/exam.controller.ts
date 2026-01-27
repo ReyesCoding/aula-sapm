@@ -12,7 +12,7 @@ const createExamSchema = z.object({
   description: z.string().optional(),
   subjectId: z.number(),
   duration: z.number().optional(),
-  // 👇 NUEVO: Opción para permitir revisión
+  dueDate: z.string().optional(),
   showResults: z.boolean().default(false),
   questions: z.array(z.object({
     text: z.string(),
@@ -50,7 +50,8 @@ export const createExam = async (req: Request, res: Response): Promise<void> => 
         duration: data.duration,
         subjectId: data.subjectId,
         teacherId: teacherId,
-        showResults: data.showResults, // 👈 Guardamos la preferencia
+        showResults: data.showResults, 
+        dueDate: data.dueDate ? new Date(data.dueDate) : null,
         questions: {
           create: data.questions.map(q => ({
             text: q.text,
@@ -80,9 +81,10 @@ export const getExamsBySubject = async (req: Request, res: Response) => {
 
     const exams = await prisma.exam.findMany({
       where: { subjectId: Number(subjectId) },
+      orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { questions: true } },
-        // 👇 Usamos la relación definida en el schema (generalmente 'submissions')
+          subject: { select: { name: true } },
         submissions: {
            where: { studentId: userId },
            select: { id: true, score: true } 
@@ -272,5 +274,31 @@ export const getExamSubmissions = async (req: Request, res: Response): Promise<v
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Error cargando resultados" });
+  }
+};
+
+// 6. TOGGLE VISIBILIDAD DE RESULTADOS (Switch del Profesor)
+export const toggleExamVisibility = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    // @ts-ignore
+    const { role } = req.user;
+
+    if (role !== 'TEACHER' && role !== 'ADMIN') {
+        res.status(403).json({ message: "No autorizado" });
+        return;
+    }
+
+    const exam = await prisma.exam.findUnique({ where: { id: Number(id) } });
+    if (!exam) { res.status(404).json({ message: "Examen no encontrado" }); return; }
+
+    const updated = await prisma.exam.update({
+        where: { id: Number(id) },
+        data: { showResults: !exam.showResults } // Invertimos el valor actual
+    });
+
+    res.json({ showResults: updated.showResults });
+  } catch (error) {
+    res.status(500).json({ message: "Error actualizando estado" });
   }
 };

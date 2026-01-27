@@ -6,23 +6,32 @@ import {
     getExamsBySubject, 
     getExamById, 
     submitExam,
-    getExamSubmissions // 👈 Ahora lo importamos de aquí mismo
+    getExamSubmissions,
+    toggleExamVisibility 
 } from '../controllers/exam.controller';
 
 const router = Router();
 
-// Rutas Profesor (Crear)
+// 1. RUTAS DE CREACIÓN Y CONFIGURACIÓN (Estáticas)
+// Crear examen (Profesor)
 router.post('/', authenticateToken, authorizeRoles([RoleName.TEACHER, RoleName.ADMIN]), createExam);
 
-// Rutas Públicas para el curso (Listar exámenes de una materia)
+// Enviar respuestas (Alumno) - Esta debe ir antes de cualquier /:id
+router.post('/submit', authenticateToken, authorizeRoles([RoleName.STUDENT]), submitExam);
+
+// 2. RUTAS DE LISTADOS
+// Listar exámenes por materia
 router.get('/subject/:subjectId', authenticateToken, getExamsBySubject);
 
-// Rutas Alumno (Tomar y Enviar)
-router.get('/:id', authenticateToken, getExamById); // Ver examen (sin respuestas correctas)
-router.post('/submit', authenticateToken, authorizeRoles([RoleName.STUDENT]), submitExam); // Enviar respuestas
-
-// Rutas Resultados (Solo Profesor/Admin)
-// 👇 Esta ruta ahora usará la función que agregamos al final de exam.controller.ts
+// 3. RUTAS ESPECÍFICAS CON ID (Deben ir ANTES de la ruta genérica /:id)
+// 👇 Ver resultados (Profesor) - ¡ESTA ES LA PRIORIDAD!
 router.get('/:id/submissions', authenticateToken, authorizeRoles([RoleName.TEACHER, RoleName.ADMIN]), getExamSubmissions);
 
-export default router;
+// 👇 Switch de visibilidad (Profesor)
+router.patch('/:id/toggle-visibility', authenticateToken, authorizeRoles([RoleName.TEACHER, RoleName.ADMIN]), toggleExamVisibility);
+
+// 4. RUTA GENÉRICA (El "Comodín")
+// Ver examen individual (Captura cualquier ID simple, por eso va AL FINAL)
+router.get('/:id', authenticateToken, getExamById);
+
+export default router;  

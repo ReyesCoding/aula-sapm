@@ -1,9 +1,13 @@
-import axios from 'axios';
+// ❌ Borramos esta línea: import axios from 'axios';
+// ✅ Usamos ÚNICAMENTE la instancia configurada
 import api from './api';
 
 export interface ExamSummary {
   id: number;
   title: string;
+  dueDate: string | null; 
+  showResults: boolean;   
+  subject?: { name: string };
   isSubmitted: boolean; 
   score: number | null; 
   _count: { questions: number };
@@ -17,9 +21,12 @@ export const getExamsBySubject = async (subjectId: number): Promise<ExamSummary[
 // Tipos para la creación
 export interface CreateExamDTO {
   title: string;
-  description: string;
+  description?: string;
   subjectId: number;
-  duration: number;
+  duration?: number;
+  dueDate?: string;       
+  showResults?: boolean;  
+  // -----------------------
   questions: {
     text: string;
     points: number;
@@ -56,8 +63,6 @@ export const submitExamResponses = async (data: SubmitExamDTO) => {
   return response.data; // El backend nos devolverá la nota (score)
 };
 
-// ... imports anteriores ...
-
 // 👇 Interfaces para los resultados
 export interface ExamSubmissionResult {
   id: number;
@@ -67,11 +72,18 @@ export interface ExamSubmissionResult {
     name: string;
     email: string;
   };
-  submittedAt?: string; // Opcional, si tienes fecha de entrega
+  submittedAt?: string; 
 }
 
 // 👇 Función para obtener los resultados de un examen (Solo Profesor)
 export const getExamSubmissions = async (examId: number): Promise<ExamSubmissionResult[]> => {
-  const response = await axios.get(`/exams/${examId}/submissions`);
+  // ✅ CORREGIDO: Usamos 'api' en lugar de 'axios'
+  const response = await api.get(`/exams/${examId}/submissions`);
   return response.data;
+};
+
+export const toggleExamResults = async (examId: number) => {
+  // ✅ CORREGIDO: Usamos 'api' en lugar de 'axios'
+  const response = await api.patch(`/exams/${examId}/toggle-visibility`);
+  return response.data; // { showResults: boolean }
 };

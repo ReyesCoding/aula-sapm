@@ -1,12 +1,12 @@
 import axios from 'axios';
 
-// 1. Crear la instancia de Axios con la URL base de tu backend
+// 1. Crear la instancia de Axios
+// ⚠️ CAMBIO CRÍTICO: Cambiamos 3001 a 3000 para coincidir con server.ts
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api', // Asegúrate de que este puerto coincida con tu backend
+  baseURL: 'http://localhost:3001/api', 
 });
 
 // 2. Interceptor de Solicitud (Request)
-// Antes de que salga la petición, le pegamos el token
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
@@ -19,17 +19,15 @@ api.interceptors.request.use(
 ); 
 
 // 3. Interceptor de Respuesta (Response)
-// Si el backend nos responde 401 o 403 (Token vencido/invalido), limpiamos todo
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-      // Si el error no viene del login (porque si fallas login es normal tener 401)
-      if (!error.config.url.includes('/auth/login')) {
+      // Si el error no viene del login, cerramos sesión
+      if (error.config && !error.config.url.includes('/auth/login')) {
         console.warn("Sesión expirada o inválida. Cerrando sesión...");
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        // Opcional: Redirigir al login forzosamente
         window.location.href = '/login';
       }
     }

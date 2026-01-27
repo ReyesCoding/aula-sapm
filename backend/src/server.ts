@@ -3,11 +3,13 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import path from 'path';
+
+// Importación de Rutas
 import authRoutes from './routes/auth.routes';
 import assignmentRoutes from './routes/assignment.routes'; 
 import dashboardRoutes from './routes/dashboard.routes'; 
 import reportRoutes from './routes/report.routes'; 
-import path from 'path'; 
 import courseRoutes from './routes/course.routes'; 
 import userRoutes from './routes/users.routes';
 import subjectRoutes from './routes/subject.routes'; 
@@ -17,49 +19,65 @@ import examRoutes from './routes/exam.routes';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+// Usamos el puerto que definas en .env o el 3000 por defecto (el frontend suele llamar al 3000)
+const PORT = Number(process.env.PORT) || 3000;
 
-// 🛡️ Middlewares
+// 🛡️ Middlewares de Seguridad y Logs
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }
+  crossOriginResourcePolicy: { policy: "cross-origin" } // Permite cargar imágenes/archivos
 }));
-app.use(cors());
-app.use(morgan('dev'));
-app.use(express.json());
+
+// Configuración CORS Permisiva para Desarrollo (Permite Frontend Vite)
+app.use(cors({
+  origin: true, // Acepta cualquier origen en dev (útil para localhost)
+  credentials: true
+}));
+
+app.use(morgan('dev')); // Log de peticiones en consola
+app.use(express.json()); // Parsing de JSON
+
+// 📂 Archivos Estáticos (Uploads)
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // ✅ Health Check
 app.get('/api/health', (req: Request, res: Response) => {
   res.status(200).json({ 
     status: 'OK', 
     project: 'Aula - Student Assignment Manager', 
-    timestamp: new Date() 
+    timestamp: new Date().toISOString() 
   });
 });
 
-// ✅ Rutas de la API
+// ✅ RUTAS DE LA API (El orden importa)
 app.use('/api/auth', authRoutes);
 app.use('/api/assignments', assignmentRoutes); 
 app.use('/api/dashboard', dashboardRoutes); 
 app.use('/api/reports', reportRoutes); 
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 app.use('/api/courses', courseRoutes); 
 app.use('/api/users', userRoutes); 
 app.use('/api/subjects', subjectRoutes);
+
+// 👇 AQUÍ ESTÁ LA CLAVE: Montamos las rutas de exámenes
 app.use('/api/exams', examRoutes);
 
-//  Manejo de Errores Global
+// ⚠️ Manejo de Errores Global (Siempre al final)
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  console.error(err.stack);
+  console.error("❌ Error del Servidor:", err.stack);
   res.status(500).json({ 
     status: 'error', 
-    message: 'Internal Server Error' 
+    message: err.message || 'Internal Server Error' 
   });
 });
 
-//  Iniciar Servidor
+// 404 - Ruta no encontrada (Para APIs que no existen)
+app.use((req, res) => {
+  res.status(404).json({ message: `Ruta ${req.originalUrl} no encontrada` });
+});
+
+// 🚀 Iniciar Servidor
 app.listen(PORT, () => {
   console.log(`\n🚀 Servidor Aula corriendo en: http://localhost:${PORT}`);
   console.log(`👉 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`👉 Auth Routes: http://localhost:${PORT}/api/auth`);
-  console.log(`👉 Assignment Routes: http://localhost:${PORT}/api/assignments\n`);
+  console.log(`📂 Uploads: http://localhost:${PORT}/uploads`);
+  console.log(`✅ EXAMS API: http://localhost:${PORT}/api/exams\n`);
 });

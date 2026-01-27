@@ -120,8 +120,11 @@ export const updateAssignment = async (id: number, data: { title: string, descri
   return response;
 };
 
-export const getAssignmentsBySubject = async (subjectId: number) => {
-  // Pasamos el ID como query param ?subjectId=1
-  const response = await api.get(`/assignments?subjectId=${subjectId}`);
+// ✅ MEJORA: Tipado explícito y uso de 'params'
+export const getAssignmentsBySubject = async (subjectId: number): Promise<Assignment[]> => {
+  // Axios se encarga de convertir esto a ?subjectId=1 de forma segura
+  const response = await api.get('/assignments', { 
+    params: { subjectId } 
+  });
   return response.data;
 };

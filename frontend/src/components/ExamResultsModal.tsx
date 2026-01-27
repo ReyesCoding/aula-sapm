@@ -11,22 +11,32 @@ interface Props {
 
 export const ExamResultsModal = ({ isOpen, onClose, examId, examTitle }: Props) => {
   const [submissions, setSubmissions] = useState<ExamSubmissionResult[]>([]);
-  // ✅ FIX: Inicializamos en true para evitar el setState dentro del useEffect
   const [loading, setLoading] = useState(true); 
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && examId) {
-      // Definimos la función async dentro del efecto
       const fetchData = async () => {
         try {
-          // No necesitamos setLoading(true) aquí porque ya es el valor inicial
+          // Reiniciamos estados
           setError(null);
+          // setLoading(true); // Ya inicia en true, evitamos re-render extra
+          
           const data = await getExamSubmissions(examId);
+          
+          // 🔍 DEBUG: Ver en consola qué diablos está llegando
+          console.log("ExamResultsModal - Respuesta Backend:", data);
+
+          // 🛡️ GUARDIAN: Verificamos si es realmente un array
+          if (!Array.isArray(data)) {
+             throw new Error("El servidor devolvió un formato inválido (No es una lista)");
+          }
+
           setSubmissions(data);
         } catch (err) {
-          console.error("Error cargando resultados", err);
-          setError("No se pudieron cargar los resultados.");
+          console.error("Error cargando resultados:", err);
+          setError("No se pudieron cargar los resultados. Verifica la conexión.");
+          setSubmissions([]); // Limpiamos para evitar errores de renderizado
         } finally {
           setLoading(false);
         }
@@ -38,10 +48,12 @@ export const ExamResultsModal = ({ isOpen, onClose, examId, examTitle }: Props) 
 
   if (!isOpen) return null;
 
-  // Calculamos estadísticas
-  const average = submissions.length > 0 
-    ? (submissions.reduce((acc, curr) => acc + curr.score, 0) / submissions.length).toFixed(1)
-    : 0;
+  // 🛡️ CÁLCULO SEGURO: Usamos una variable auxiliar validada
+  const validSubmissions = Array.isArray(submissions) ? submissions : [];
+
+  const average = validSubmissions.length > 0 
+    ? (validSubmissions.reduce((acc, curr) => acc + curr.score, 0) / validSubmissions.length).toFixed(1)
+    : "0.0";
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -52,7 +64,7 @@ export const ExamResultsModal = ({ isOpen, onClose, examId, examTitle }: Props) 
           <div>
             <h2 className="font-bold text-lg text-gray-800">Resultados: {examTitle}</h2>
             <p className="text-xs text-gray-500 mt-1">
-              Entregas: {submissions.length} | Promedio: {average} pts
+              Entregas: {validSubmissions.length} | Promedio: {average} pts
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
@@ -68,11 +80,12 @@ export const ExamResultsModal = ({ isOpen, onClose, examId, examTitle }: Props) 
               <span className="text-sm font-medium">Cargando notas...</span>
             </div>
           ) : error ? (
-            <div className="p-10 text-center text-red-500">
-              <AlertCircle className="mx-auto mb-2" size={32}/>
-              <p>{error}</p>
+            <div className="p-10 text-center text-red-500 flex flex-col items-center">
+              <AlertCircle className="mb-2" size={32}/>
+              <p className="font-bold">Error</p>
+              <p className="text-sm">{error}</p>
             </div>
-          ) : submissions.length === 0 ? (
+          ) : validSubmissions.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <User size={48} className="mb-4 opacity-20" />
               <p className="font-medium">Nadie ha tomado este examen aún.</p>
@@ -87,16 +100,16 @@ export const ExamResultsModal = ({ isOpen, onClose, examId, examTitle }: Props) 
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {submissions.map((sub) => (
+                {validSubmissions.map((sub) => (
                   <tr key={sub.id} className="hover:bg-gray-50 transition-colors">
                     <td className="p-4">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">
-                          {sub.student.name.charAt(0).toUpperCase()}
+                          {sub.student?.name?.charAt(0).toUpperCase() || "?"}
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900">{sub.student.name}</p>
-                          <p className="text-xs text-gray-500">{sub.student.email}</p>
+                          <p className="font-medium text-gray-900">{sub.student?.name || "Desconocido"}</p>
+                          <p className="text-xs text-gray-500">{sub.student?.email || ""}</p>
                         </div>
                       </div>
                     </td>
