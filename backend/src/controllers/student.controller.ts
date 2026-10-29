@@ -17,14 +17,15 @@ export const getMyPerformance = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // Buscamos cursos donde el estudiante está inscrito
-    // Y dentro de esos cursos, las asignaciones (Assignments)
+    // Buscamos materias donde el estudiante está inscrito
+    // Y dentro de esas materias, las asignaciones (Assignments) asignadas a él
+    // Nota: el schema real no tiene un modelo "Course" ligado a Enrollment,
+    // la relación correcta es Enrollment -> Subject -> Assignment[].
     const enrollments = await prisma.enrollment.findMany({
       where: { studentId },
       include: {
-        course: {
+        subject: {
           include: {
-            subject: true,
             assignments: {
               where: { studentId } // Solo mis tareas asignadas
             }
@@ -34,18 +35,17 @@ export const getMyPerformance = async (req: Request, res: Response): Promise<voi
     });
 
     const resumen = enrollments.map((enrollment) => {
-      const course = enrollment.course;
-      const total = course.assignments.length;
+      const subject = enrollment.subject;
+      const total = subject.assignments.length;
       // Consideramos completada si está enviada o calificada
-      const completadas = course.assignments.filter((t) => 
+      const completadas = subject.assignments.filter((t) =>
         t.status === 'SUBMITTED' || t.status === 'GRADED'
       ).length;
-      
+
       const progreso = total > 0 ? Math.round((completadas / total) * 100) : 0;
 
       return {
-        materia: course.subject.name, // O course.name si prefieres
-        curso: course.name,
+        materia: subject.name,
         tareas_totales: total,
         completadas,
         progreso: `${progreso}%`,
@@ -63,29 +63,29 @@ export const getMyPerformance = async (req: Request, res: Response): Promise<voi
 export const getStudentProfile = async (req: Request, res: Response): Promise<void> => {
     try {
       const userId = (req as any).user?.userId;
-  
+
       if (!userId) {
         res.status(401).json({ message: 'Usuario no autenticado' });
         return;
       }
-  
+
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        // Ya no incluimos educationalCenter porque no existe en tu schema actual
         select: {
             id: true,
             name: true,
             email: true,
             role: true,
+            educationalCenterId: true,
             createdAt: true
         }
       });
-  
+
       if (!user) {
         res.status(404).json({ message: 'Estudiante no encontrado' });
         return;
       }
-  
+
       res.json({ student: user });
     } catch (error) {
       console.error("Error al cargar perfil:", error);

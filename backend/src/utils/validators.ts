@@ -1,5 +1,5 @@
 // backend/src/utils/validators.ts
-import { HttpError } from './assertRole';
+import { HttpError } from './tenant';
 
 export const toInt = (v: any): number | null => {
   const n = Number(v);

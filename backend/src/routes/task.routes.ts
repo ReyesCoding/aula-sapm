@@ -1,18 +1,7 @@
-// task.routes.ts
-import { Router } from 'express';
-import { createTask, getTasksByStudent } from '../controllers/task.controller';
-import { authenticateToken } from '../middlewares/auth.middleware';
-import { getMyTasks } from '../controllers/task.controller';
-import { completeTask } from '../controllers/task.controller';
-
-
-
-const router = Router();
-
-// ⛔️ Elimina el prefijo '/tasks' aquí
-router.post('/', authenticateToken, createTask);
-router.get('/:studentId', authenticateToken, getTasksByStudent);
-router.get('/my-tasks', authenticateToken, getMyTasks);
-router.patch('/:id/complete', authenticateToken, completeTask);
-
-export default router;
+/**
+ * @deprecated Ver src/controllers/task.controller.ts — no está montado en
+ * server.ts. La funcionalidad real de tareas vive en
+ * src/routes/assignment.routes.ts (montado en /api/assignments).
+ * Puedes borrar ambos archivos cuando quieras.
+ */
+export {};

@@ -41,7 +41,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     // 5. Generar Token
     const token = jwt.sign(
-      { userId: user.id, role: user.role, email: user.email }, 
+      { userId: user.id, role: user.role, email: user.email, educationalCenterId: user.educationalCenterId },
       process.env.JWT_SECRET, 
       { expiresIn: '1d' } 
     );
@@ -55,6 +55,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         name: user.name,
         email: user.email,
         role: user.role,
+        educationalCenterId: user.educationalCenterId,
       },
     });
 

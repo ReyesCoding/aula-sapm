@@ -27,12 +27,25 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
 // --- 2. CREAR USUARIO (Admin - CON SEGURIDAD BCRYPT) ---
 export const createUser = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password, role } = req.body;
-    
+    const { name, email, password, role, educationalCenterId } = req.body;
+
     // Validación simple
     if (!name || !email || !password || !role) {
       res.status(400).json({ message: 'Faltan campos obligatorios' });
       return;
+    }
+
+    // v2.0: todo rol que no sea ADMIN debe pertenecer a un centro educativo
+    if (role !== RoleName.ADMIN && !educationalCenterId) {
+      res.status(400).json({ message: 'educationalCenterId es obligatorio para roles distintos de ADMIN' });
+      return;
+    }
+    if (role !== RoleName.ADMIN) {
+      const center = await prisma.educationalCenter.findUnique({ where: { id: Number(educationalCenterId) } });
+      if (!center) {
+        res.status(404).json({ message: 'El centro educativo indicado no existe' });
+        return;
+      }
     }
 
     // Verificar si existe
@@ -51,7 +64,8 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
         email,
         password: hashedPassword, // Guardamos la versión encriptada
         role: role as RoleName,
-        isActive: true
+        isActive: true,
+        educationalCenterId: role === RoleName.ADMIN ? null : Number(educationalCenterId)
       }
     });
 

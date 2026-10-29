@@ -1,20 +1,23 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { PrismaClient, RoleName } from '@prisma/client';
 import PDFDocument from 'pdfkit';
 import { AuthRequest } from '../middlewares/auth.middleware';
 
 const prisma = new PrismaClient();
 
-export const generateStudentReport = async (req: AuthRequest, res: Response): Promise<any> => {
+// Nota: la firma se tipa como (req: Request, ...) y se castea adentro a
+// AuthRequest — declarar el parámetro ya como AuthRequest rompe la
+// asignación a RequestHandler de Express (contravarianza de tipos).
+export const generateStudentReport = async (req: Request, res: Response): Promise<any> => {
   try {
-    const { userId, role } = req.user!;
+    const { userId, role } = (req as AuthRequest).user!;
     let targetStudentId = userId;
 
     // Lógica de seguridad: ¿De quién es el reporte?
     if (role === RoleName.PARENT) {
       // El padre pide el reporte de un hijo específico (lo manda por query param ?studentId=7)
       const requestedChildId = Number(req.query.studentId);
-      
+
       // Verificar que sea SU hijo
       const relation = await prisma.parentChild.findUnique({
         where: { parentId_childId: { parentId: userId, childId: requestedChildId } }
@@ -22,7 +25,7 @@ export const generateStudentReport = async (req: AuthRequest, res: Response): Pr
 
       if (!relation) return res.status(403).json({ message: 'No tienes permiso para ver este reporte' });
       targetStudentId = requestedChildId;
-    } 
+    }
     // Si es Student, targetStudentId ya es su propio ID.
     // Si es Teacher/Admin, podrían pedir cualquiera (simplifiquemos: Teacher pide por query)
     else if (role === RoleName.TEACHER) {
@@ -45,14 +48,14 @@ export const generateStudentReport = async (req: AuthRequest, res: Response): Pr
 
     // 3. Generar PDF
     const doc = new PDFDocument();
-    
+
     // Pipe: Conectar el documento directamente a la respuesta (Stream)
     doc.pipe(res);
 
     // --- CONTENIDO DEL PDF ---
     doc.fontSize(20).text('Aula - Reporte de Progreso', { align: 'center' });
     doc.moveDown();
-    
+
     doc.fontSize(14).text(`Estudiante: ${student.name}`);
     doc.text(`Fecha de generación: ${new Date().toLocaleDateString()}`);
     doc.text(`Total de tareas: ${assignments.length}`);
@@ -66,11 +69,11 @@ export const generateStudentReport = async (req: AuthRequest, res: Response): Pr
       const statusIcon = task.status === 'SUBMITTED' ? '[OK]' : '[Pendiente]';
 // Usamos ?. (optional chaining) y || 'General' por si no tiene materia asignada
       const subjectName = task.subject?.name || (task as any).course?.name || 'General';
-      const line = `${index + 1}. ${subjectName}: ${task.title} - ${statusIcon}`;      
+      const line = `${index + 1}. ${subjectName}: ${task.title} - ${statusIcon}`;
       // Color según estado
       if (task.status === 'SUBMITTED') doc.fillColor('green');
       else doc.fillColor('red');
-      
+
       doc.text(line);
       doc.fillColor('black'); // Reset color
     });

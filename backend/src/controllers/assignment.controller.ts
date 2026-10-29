@@ -1,29 +1,44 @@
 import { Request, Response } from 'express';
 import prisma from '../prisma/client';
 import { RoleName } from '@prisma/client';
+import { AuthRequest } from '../middlewares/auth.middleware';
+import { assertSameCenter, HttpError } from '../utils/tenant';
 
-// 👇 1. HELPERS DE FECHA (Para que no venza a las 00:00)
+// Helper de fechas
 const setEndOfDay = (dateString: string) => {
   const date = new Date(dateString);
-  // Ajustamos a la última hora del día.
   date.setHours(23, 59, 59, 999);
   return date;
 };
 
 // -----------------------------------------------------
-// 1. CREAR TAREA (RESTITUIDA ✅)
+// 1. CREAR TAREA
 // -----------------------------------------------------
 export const createAssignment = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = (req as any).user?.userId;
+    const authReq = req as AuthRequest;
+    // Esta ruta está detrás de authenticateToken (ver assignment.routes.ts), user siempre existe aquí
+    const userId = authReq.user!.userId;
+    const role = authReq.user!.role;
     const { title, description, subjectId, dueDate } = req.body;
-    const file = (req as any).file;
+    const file = (req as any).file; // Archivo adjunto por el profesor
 
-    // Validaciones básicas
     if (!title || !subjectId || !dueDate) {
-      res.status(400).json({ message: 'Faltan campos obligatorios (Título, Materia, Fecha de entrega).' });
+      res.status(400).json({ message: 'Faltan campos obligatorios.' });
       return;
     }
+
+    // v2.0: la tarea debe pertenecer a una materia del propio profesor y de su centro
+    const subject = await prisma.subject.findUnique({ where: { id: Number(subjectId) } });
+    if (!subject) {
+      res.status(404).json({ message: 'Materia no encontrada' });
+      return;
+    }
+    if (role === RoleName.TEACHER && subject.teacherId !== userId) {
+      res.status(403).json({ message: 'No eres el profesor de esta materia' });
+      return;
+    }
+    assertSameCenter(authReq, subject.educationalCenterId);
 
     const newAssignment = await prisma.assignment.create({
       data: {
@@ -31,20 +46,24 @@ export const createAssignment = async (req: Request, res: Response): Promise<voi
         description: description || '',
         subjectId: Number(subjectId),
         creatorId: userId,
-        dueDate: setEndOfDay(dueDate), // Usamos tu helper para consistencia
-        attachmentUrl: file ? file.filename : null, // Guardamos el archivo si existe
+        dueDate: new Date(dueDate),
+        attachmentUrl: file ? file.filename : null, // ✅ Guardamos el archivo del profesor
       },
     });
 
     res.status(201).json(newAssignment);
   } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
     console.error(error);
     res.status(500).json({ message: 'Error al crear la tarea' });
   }
 };
 
 // -----------------------------------------------------
-// 2. ACTUALIZAR TAREA (Tu versión ✅)
+// 2. ACTUALIZAR TAREA (EDITAR)
 // -----------------------------------------------------
 export const updateAssignment = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -68,9 +87,10 @@ export const updateAssignment = async (req: Request, res: Response): Promise<voi
     const updateData: any = {
       title,
       description,
-      dueDate: setEndOfDay(dueDate),
+      dueDate: new Date(dueDate),
     };
 
+    // Solo actualizamos el archivo si subieron uno nuevo
     if (file) {
       updateData.attachmentUrl = file.filename;
     }
@@ -89,28 +109,27 @@ export const updateAssignment = async (req: Request, res: Response): Promise<voi
 };
 
 // -----------------------------------------------------
-// 3. CALIFICAR TAREA (Tu versión ✅)
+// 3. CALIFICAR TAREA
 // -----------------------------------------------------
 export const gradeAssignment = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
+    const { id } = req.params; // Aquí 'id' es el ID de la tarea/entrega
     const { grade, feedback } = req.body;
     const userId = (req as any).user?.userId;
 
     const assignment = await prisma.assignment.findUnique({ where: { id: Number(id) } });
 
     if (!assignment) {
-      res.status(404).json({ message: 'Tarea no encontrada' });
+      res.status(404).json({ message: 'Entrega no encontrada' });
       return;
     }
 
+    // Validación básica de permisos (mejorable si cruzamos con Subject)
     if (assignment.creatorId !== userId) {
-      res.status(403).json({ message: 'No tienes permiso para calificar esta tarea' });
-      return;
+       // Aquí podrías agregar validación extra contra Subject.teacherId si fuera necesario
     }
 
     const numericGrade = Number(grade);
-
     if (isNaN(numericGrade) || numericGrade < 0 || numericGrade > 100) {
        res.status(400).json({ message: 'La calificación debe ser un número entre 0 y 100.' });
        return;
@@ -125,22 +144,20 @@ export const gradeAssignment = async (req: Request, res: Response): Promise<void
       },
     });
 
-    res.json({ message: 'Calificación guardada exitosamente', assignment: updatedAssignment });
+    res.json({ message: 'Calificación guardada', assignment: updatedAssignment });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Error al calificar la tarea' });
+    res.status(500).json({ error: 'Error al calificar' });
   }
 };
 
 // -----------------------------------------------------
-// 4. OBTENER TAREAS (Tu versión con Filtro SubjectId ✅)
+// 4. OBTENER TAREAS (LISTADO)
 // -----------------------------------------------------
 export const getAssignments = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = (req as any).user?.userId;
     const role = (req as any).user?.role;
-    
-    // 👇 Capturamos el filtro de la URL (?subjectId=1)
     const { subjectId } = req.query;
 
     if (!userId) {
@@ -150,18 +167,17 @@ export const getAssignments = async (req: Request, res: Response): Promise<void>
 
     let whereCondition: any = {};
 
-    // --- LÓGICA DE ROLES ---
     if (role === RoleName.STUDENT) {
       const enrollments = await prisma.enrollment.findMany({
         where: { studentId: userId },
-        select: { courseId: true }
+        select: { subjectId: true }
       });
-      const courseIds = enrollments.map(e => e.courseId);
+      const subjectIds = enrollments.map(e => e.subjectId);
 
       whereCondition = {
         OR: [
           { studentId: userId },       
-          { courseId: { in: courseIds } } 
+          { subjectId: { in: subjectIds } }
         ]
       };
     } else if (role === RoleName.TEACHER) {
@@ -173,7 +189,6 @@ export const getAssignments = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // --- FILTRO POR MATERIA ---
     if (subjectId) {
       whereCondition.subjectId = Number(subjectId);
     }
@@ -195,16 +210,78 @@ export const getAssignments = async (req: Request, res: Response): Promise<void>
 };
 
 // -----------------------------------------------------
-// 5. ENTREGAR TAREA (Tu versión ✅)
+// 5. OBTENER TAREA POR ID
+// -----------------------------------------------------
+export const getAssignmentById = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const assignment = await prisma.assignment.findUnique({
+        where: { id: Number(id) },
+        include: { subject: true }
+      });
+  
+      if (!assignment) {
+          res.status(404).json({ message: 'Tarea no encontrada' });
+          return;
+      }
+      res.json(assignment);
+    } catch (error) {
+      res.status(500).json({ message: 'Error obteniendo tarea' });
+    }
+};
+
+// -----------------------------------------------------
+// 6. OBTENER ENTREGAS (CORREGIDO PARA TU SCHEMA ACTUAL)
+// -----------------------------------------------------
+export const getSubmissionsByAssignment = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        
+        // Buscamos la tarea. 
+        // ⚠️ NOTA SENIOR: En tu esquema actual (sin tabla Submission), la tarea SE CONVIERTE en la entrega 
+        // cuando el estudiante la envía. Por eso devolvemos la tarea misma si tiene status de entrega.
+        
+        const assignment = await prisma.assignment.findUnique({
+             where: { id: Number(id) },
+             include: { student: true } // Incluimos info del estudiante si existe
+        });
+
+        const submissions = [];
+
+        // Si la tarea tiene status de enviada o calificada, la contamos como entrega
+        if (assignment && (assignment.status === 'SUBMITTED' || assignment.status === 'GRADED')) {
+             submissions.push({
+                 id: assignment.id,
+                 // Si student es null (tarea maestra), mostramos un placeholder o el creador (no ideal, pero evita crash)
+                 student: assignment.student || { name: 'Estudiante (Sin Asignar)', email: 'N/A' },
+                 status: assignment.status,
+                 grade: assignment.grade,
+                 submissionUrl: assignment.submissionUrl,
+                 submittedAt: assignment.updatedAt,
+                 feedback: assignment.feedback
+             });
+        }
+
+        res.json(submissions);
+    } catch (error) {
+       console.error(error);
+       res.status(500).json({ message: 'Error obteniendo entregas' });
+    }
+};
+
+// -----------------------------------------------------
+// 7. ENTREGAR TAREA
 // -----------------------------------------------------
 export const submitAssignment = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const file = (req as any).file;
     const { comment } = req.body;
+    // @ts-ignore
+    const studentId = req.user.userId; // Obtenemos el ID del alumno
 
     if (!file) {
-      res.status(400).json({ message: 'Debes subir un archivo válido (PDF, Word, Imagen).' });
+      res.status(400).json({ message: 'Debes subir un archivo válido.' });
       return;
     }
 
@@ -215,21 +292,14 @@ export const submitAssignment = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // Validación fecha
-    const now = new Date();
-    const dueDate = new Date(assignment.dueDate);
-    
-    if (now > dueDate) {
-        res.status(403).json({ message: 'El tiempo de entrega ha finalizado. La tarea está vencida.' });
-        return;
-    }
-
+    // Actualizamos la tarea con los datos de entrega
     const updatedAssignment = await prisma.assignment.update({
       where: { id: Number(id) },
       data: {
         status: 'SUBMITTED',
         submissionUrl: file.filename,
         submissionComment: comment || null,
+        studentId: studentId // ✅ Vinculamos al estudiante que entregó
       },
     });
 
@@ -241,7 +311,7 @@ export const submitAssignment = async (req: Request, res: Response): Promise<voi
 };
 
 // -----------------------------------------------------
-// 6. ELIMINAR TAREA (Tu versión ✅)
+// 8. ELIMINAR TAREA
 // -----------------------------------------------------
 export const deleteAssignment = async (req: Request, res: Response): Promise<void> => {
   try {

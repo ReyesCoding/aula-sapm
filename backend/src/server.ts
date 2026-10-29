@@ -7,13 +7,18 @@ import path from 'path';
 
 // Importación de Rutas
 import authRoutes from './routes/auth.routes';
-import assignmentRoutes from './routes/assignment.routes'; 
-import dashboardRoutes from './routes/dashboard.routes'; 
-import reportRoutes from './routes/report.routes'; 
-import courseRoutes from './routes/course.routes'; 
+import assignmentRoutes from './routes/assignment.routes';
+import dashboardRoutes from './routes/dashboard.routes';
+import reportRoutes from './routes/report.routes';
+import courseRoutes from './routes/course.routes';
 import userRoutes from './routes/users.routes';
-import subjectRoutes from './routes/subject.routes'; 
+import subjectRoutes from './routes/subject.routes';
 import examRoutes from './routes/exam.routes';
+import centerRoutes from './routes/center.routes';
+import messagingRoutes from './routes/messaging.routes';
+import notificationRoutes from './routes/notification.routes';
+import adminRoutes from './routes/admin.routes';
+import forumRoutes from './routes/forum.routes';
 
 // Configuración de entorno
 dotenv.config();
@@ -41,31 +46,38 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // ✅ Health Check
 app.get('/api/health', (req: Request, res: Response) => {
-  res.status(200).json({ 
-    status: 'OK', 
-    project: 'Aula - Student Assignment Manager', 
-    timestamp: new Date().toISOString() 
+  res.status(200).json({
+    status: 'OK',
+    project: 'Aula - Student Assignment Manager',
+    timestamp: new Date().toISOString()
   });
 });
 
 // ✅ RUTAS DE LA API (El orden importa)
 app.use('/api/auth', authRoutes);
-app.use('/api/assignments', assignmentRoutes); 
-app.use('/api/dashboard', dashboardRoutes); 
-app.use('/api/reports', reportRoutes); 
-app.use('/api/courses', courseRoutes); 
-app.use('/api/users', userRoutes); 
+app.use('/api/assignments', assignmentRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/courses', courseRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/subjects', subjectRoutes);
 
 // 👇 AQUÍ ESTÁ LA CLAVE: Montamos las rutas de exámenes
 app.use('/api/exams', examRoutes);
 
+// v2.0: Multi-centro + Centro de Mensajería + Notificaciones + Admin
+app.use('/api/centers', centerRoutes);
+app.use('/api/messages', messagingRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/forums', forumRoutes);
+
 // ⚠️ Manejo de Errores Global (Siempre al final)
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error("❌ Error del Servidor:", err.stack);
-  res.status(500).json({ 
-    status: 'error', 
-    message: err.message || 'Internal Server Error' 
+  res.status(500).json({
+    status: 'error',
+    message: err.message || 'Internal Server Error'
   });
 });
 

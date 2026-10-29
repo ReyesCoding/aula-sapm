@@ -1,15 +1,15 @@
 // backend/src/routes/admin.routes.ts
 import { Router } from 'express';
-import { authenticateToken } from '../middlewares/auth.middleware';
-import { allowRoles } from '../middlewares/role.middleware';
+import { RoleName } from '@prisma/client';
+import { authenticateToken, authorizeRoles } from '../middlewares/auth.middleware';
 import { getAdminStats, adminSearch } from '../controllers/admin.controller';
 
 const router = Router();
 
-// Solo Admin
-router.get('/stats', authenticateToken, allowRoles('Admin'), getAdminStats);
+// Solo Admin (plataforma)
+router.get('/stats', authenticateToken, authorizeRoles([RoleName.ADMIN]), getAdminStats);
 
 // Admin o Centro
-router.get('/search', authenticateToken, allowRoles('Admin', 'Centro'), adminSearch);
+router.get('/search', authenticateToken, authorizeRoles([RoleName.ADMIN, RoleName.CENTRO]), adminSearch);
 
 export default router;

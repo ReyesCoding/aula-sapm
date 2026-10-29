@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
 import prisma from '../prisma/client';
 import { z } from 'zod';
-import { RoleName } from '@prisma/client'; // Asegúrate de importar esto
+import { RoleName } from '@prisma/client';
+import { AuthRequest } from '../middlewares/auth.middleware';
+import { assertSameCenter, HttpError } from '../utils/tenant';
 
 // ------------------------------------------------------------------
 // ESQUEMAS ZOD
@@ -39,9 +41,22 @@ const submitExamSchema = z.object({
 // 1. CREAR EXAMEN
 export const createExam = async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthRequest;
     // @ts-ignore
     const teacherId = req.user.userId; 
     const data = createExamSchema.parse(req.body);
+
+    // v2.0: el examen debe pertenecer a una materia del propio profesor y de su centro
+    const subject = await prisma.subject.findUnique({ where: { id: data.subjectId } });
+    if (!subject) {
+      res.status(404).json({ message: 'Materia no encontrada' });
+      return;
+    }
+    if (authReq.user?.role === RoleName.TEACHER && subject.teacherId !== teacherId) {
+      res.status(403).json({ message: 'No eres el profesor de esta materia' });
+      return;
+    }
+    assertSameCenter(authReq, subject.educationalCenterId);
 
     const newExam = await prisma.exam.create({
       data: {
@@ -67,17 +82,47 @@ export const createExam = async (req: Request, res: Response): Promise<void> => 
 
     res.status(201).json(newExam);
   } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
     console.error(error);
     res.status(400).json({ message: 'Error creando examen', error });
   }
 };
 
-// 2. OBTENER EXÁMENES POR MATERIA
+// 2. OBTENER EXÁMENES POR MATERIA (Con Seguridad de Inscripción)
 export const getExamsBySubject = async (req: Request, res: Response) => {
   try {
     const { subjectId } = req.params;
     // @ts-ignore
     const userId = req.user.userId;
+    // @ts-ignore
+    const role = req.user.role;
+
+    // v2.0: nadie puede consultar exámenes de una materia de otro centro
+    const subjectForExamsList = await prisma.subject.findUnique({ where: { id: Number(subjectId) } });
+    if (!subjectForExamsList) {
+      return res.status(404).json({ message: 'Materia no encontrada' });
+    }
+    assertSameCenter(req as AuthRequest, subjectForExamsList.educationalCenterId);
+
+    // 🔒 SEGURIDAD: Si es estudiante, verificar inscripción
+    if (role === RoleName.STUDENT) {
+        const enrollment = await prisma.enrollment.findUnique({
+            where: {
+                // Prisma genera este nombre para claves compuestas @@unique([studentId, subjectId])
+                studentId_subjectId: {
+                    studentId: userId,
+                    subjectId: Number(subjectId)
+                }
+            }
+        });
+
+        if (!enrollment) {
+            return res.status(403).json({ message: 'No tienes acceso a esta materia' });
+        }
+    }
 
     const exams = await prisma.exam.findMany({
       where: { subjectId: Number(subjectId) },
@@ -93,9 +138,7 @@ export const getExamsBySubject = async (req: Request, res: Response) => {
     });
 
     const examsWithStatus = exams.map(exam => {
-        // @ts-ignore
         const userSubmission = exam.submissions && exam.submissions.length > 0 
-            // @ts-ignore
             ? exam.submissions[0] 
             : null;
 
@@ -108,6 +151,9 @@ export const getExamsBySubject = async (req: Request, res: Response) => {
 
     res.json(examsWithStatus);
   } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
     console.error("Error fetching exams:", error);
     res.status(500).json({ message: 'Error fetching exams' });
   }
@@ -127,15 +173,16 @@ export const getExamById = async (req: Request, res: Response): Promise<void> =>
         where: { examId: Number(id), studentId: userId }
     });
 
-    // Traemos el examen completo (incluyendo respuestas correctas por ahora)
+    // Traemos el examen completo
     const exam = await prisma.exam.findUnique({
       where: { id: Number(id) },
       include: { 
         questions: { 
           include: { 
-            options: true // Traemos todo, filtraremos abajo 👇
+            options: true 
           } 
-        } 
+        },
+        subject: { select: { educationalCenterId: true } }
       }
     });
 
@@ -143,22 +190,21 @@ export const getExamById = async (req: Request, res: Response): Promise<void> =>
        res.status(404).json({ message: 'Examen no encontrado' });
        return;
     }
-    
-    // 🧠 LÓGICA DE SEGURIDAD PARA VER RESPUESTAS
-    // Puede ver las respuestas correctas SI:
-    // 1. Es PROFESOR
-    // 2. O (Es ESTUDIANTE Y ya entregó Y el examen permite ver resultados)
+
+    // v2.0: no se puede ver un examen de otro centro
+    assertSameCenter(req as AuthRequest, exam.subject.educationalCenterId);
+
+    // 🧠 LÓGICA DE SEGURIDAD PARA VER RESPUESTAS CORRECTAS
     const canSeeAnswers = 
         role === 'TEACHER' || 
         (!!existingSubmission && exam.showResults);
 
-    // Sanitizamos el objeto antes de enviarlo
+    // Sanitizamos el objeto (Ocultamos isCorrect si no tiene permiso)
     const sanitizedQuestions = exam.questions.map(q => ({
         ...q,
         options: q.options.map(o => ({
             id: o.id,
             text: o.text,
-            // Solo enviamos isCorrect si tiene permiso, sino undefined/false
             isCorrect: canSeeAnswers ? o.isCorrect : undefined 
         }))
     }));
@@ -172,12 +218,16 @@ export const getExamById = async (req: Request, res: Response): Promise<void> =>
 
     res.json(responseData);
   } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
     console.error(error);
     res.status(500).json({ message: 'Error cargando examen' });
   }
 };
 
-// 4. RESPONDER EXAMEN (Lógica: Suma de Puntos)
+// 4. RESPONDER EXAMEN (Guarda Respuestas + Calcula Nota)
 export const submitExam = async (req: Request, res: Response): Promise<void> => {
   try {
     // @ts-ignore
@@ -189,11 +239,15 @@ export const submitExam = async (req: Request, res: Response): Promise<void> => 
       include: { 
         questions: { 
             include: { options: true } 
-        } 
+        },
+        subject: { select: { educationalCenterId: true } }
       }
     });
 
     if (!exam) { res.status(404).json({ message: "Examen no encontrado" }); return; }
+
+    // v2.0: no se puede responder un examen de otro centro
+    assertSameCenter(req as AuthRequest, exam.subject.educationalCenterId);
 
     const existing = await prisma.examSubmission.findFirst({
         where: { examId, studentId }
@@ -206,59 +260,74 @@ export const submitExam = async (req: Request, res: Response): Promise<void> => 
 
     let earnedPoints = 0;
     
-    // Algoritmo de Calificación: Suma directa
+    // Algoritmo de Calificación
     exam.questions.forEach(question => {
-      const qPoints = question.points || 1; // Valor de la pregunta
-      
+      const qPoints = question.points || 1; 
       const studentAnswer = answers.find(a => a.questionId === question.id);
 
       if (studentAnswer) {
         const selectedOption = question.options.find(o => o.id === studentAnswer.selectedOptionId);
         if (selectedOption && selectedOption.isCorrect) {
-          earnedPoints += qPoints; // Sumamos los puntos tal cual
+          earnedPoints += qPoints; 
         }
       }
     });
 
-    // Nota final = Suma de puntos obtenidos
-    const finalScore = earnedPoints;
-
+    // ⚠️ CAMBIO CRÍTICO: Guardamos la Submission Y las Respuestas (Answers)
     const submission = await prisma.examSubmission.create({
       data: {
         studentId,
         examId,
-        score: finalScore,
+        score: earnedPoints,
+        // 👇 ESTO ES LO QUE FALTABA: Guardar las respuestas en BD
+        answers: {
+            create: answers.map(a => ({
+                questionId: a.questionId,
+                selectedOptionId: a.selectedOptionId
+            }))
+        }
       }
     });
 
     res.json(submission);
 
   } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
     console.error(error);
     res.status(500).json({ message: 'Error procesando examen' });
   }
 };
 
-// 5. OBTENER RESULTADOS DE UN EXAMEN (SOLO PROFESOR)
-export const getExamSubmissions = async (req: Request, res: Response): Promise<void> => {
+// 5. OBTENER RESULTADOS (Profesor)
+export const getExamResults = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id } = req.params; // ID del examen
+    const { id } = req.params; 
     // @ts-ignore
     const { userId, role } = req.user;
 
     if (role !== 'TEACHER' && role !== 'ADMIN') {
-       res.status(403).json({ message: "No tienes permiso para ver estos resultados" });
+       res.status(403).json({ message: "No tienes permiso" });
        return;
     }
 
-    // Verificar que el examen pertenece al profesor (opcional pero recomendado)
-    const exam = await prisma.exam.findUnique({ where: { id: Number(id) } });
-    if (exam && exam.teacherId !== userId && role !== 'ADMIN') {
-       res.status(403).json({ message: "Este examen no te pertenece" });
-       return;
+    // v2.0: el profesor solo puede ver resultados de SUS propios exámenes, y de su centro
+    const examForResults = await prisma.exam.findUnique({
+      where: { id: Number(id) },
+      include: { subject: { select: { educationalCenterId: true } } }
+    });
+    if (!examForResults) {
+      res.status(404).json({ message: 'Examen no encontrado' });
+      return;
     }
+    if (role === 'TEACHER' && examForResults.teacherId !== userId) {
+      res.status(403).json({ message: 'No eres el profesor de este examen' });
+      return;
+    }
+    assertSameCenter(req as AuthRequest, examForResults.subject.educationalCenterId);
 
-    // Obtener las entregas con datos del estudiante
     const submissions = await prisma.examSubmission.findMany({
       where: { examId: Number(id) },
       include: {
@@ -266,39 +335,58 @@ export const getExamSubmissions = async (req: Request, res: Response): Promise<v
           select: { id: true, name: true, email: true }
         }
       },
-      orderBy: { score: 'desc' } // Ordenar por mejor nota
+      orderBy: { score: 'desc' } 
     });
 
     res.json(submissions);
 
   } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
     console.error(error);
     res.status(500).json({ message: "Error cargando resultados" });
   }
 };
 
-// 6. TOGGLE VISIBILIDAD DE RESULTADOS (Switch del Profesor)
-export const toggleExamVisibility = async (req: Request, res: Response): Promise<void> => {
+// 6. TOGGLE VISIBILIDAD (Switch del Profesor)
+export const toggleExamResults = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     // @ts-ignore
-    const { role } = req.user;
+    const { userId, role } = req.user;
 
     if (role !== 'TEACHER' && role !== 'ADMIN') {
         res.status(403).json({ message: "No autorizado" });
         return;
     }
 
-    const exam = await prisma.exam.findUnique({ where: { id: Number(id) } });
+    const exam = await prisma.exam.findUnique({
+      where: { id: Number(id) },
+      include: { subject: { select: { educationalCenterId: true } } }
+    });
     if (!exam) { res.status(404).json({ message: "Examen no encontrado" }); return; }
+
+    // v2.0: el profesor solo puede modificar SUS propios exámenes, y de su centro
+    if (role === 'TEACHER' && exam.teacherId !== userId) {
+      res.status(403).json({ message: 'No eres el profesor de este examen' });
+      return;
+    }
+    assertSameCenter(req as AuthRequest, exam.subject.educationalCenterId);
 
     const updated = await prisma.exam.update({
         where: { id: Number(id) },
-        data: { showResults: !exam.showResults } // Invertimos el valor actual
+        data: { showResults: !exam.showResults } 
     });
 
     res.json({ showResults: updated.showResults });
   } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
+    console.error(error);
     res.status(500).json({ message: "Error actualizando estado" });
   }
 };

@@ -1,3 +1,6 @@
+// ==========================================
+// CONFIGURACIÓN
+// ==========================================
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,9 +10,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ENUMS
+// ==========================================
+// ENUMS (Tipos de Datos Personalizados)
+// ==========================================
+
 enum RoleName {
   ADMIN
+  CENTRO
   TEACHER
   STUDENT
   PARENT
@@ -22,35 +29,65 @@ enum AssignmentStatus {
   GRADED
 }
 
-// USUARIOS
+// 👇 NUEVO: Para el flujo de aprobación de alumnos
+enum EnrollmentStatus {
+  PENDING   // Solicitado, espera aprobación
+  ACTIVE    // Aceptado, puede ver contenido
+  REJECTED  // Rechazado por el profesor
+}
+
+// ==========================================
+// MÓDULO DE USUARIOS Y FAMILIA
+// ==========================================
+
 model User {
-  id       Int      @id @default(autoincrement())
-  name     String
-  email    String   @unique
-  password String
-  role     RoleName @default(STUDENT)
-  isActive Boolean  @default(true)
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      RoleName @default(STUDENT)
+  isActive  Boolean  @default(true)
+
+  // Multi-centro (v2.0): null solo para ADMIN (rol de plataforma, no pertenece a un centro)
+  educationalCenterId Int?
+  educationalCenter   EducationalCenter? @relation(fields: [educationalCenterId], references: [id])
+
+  // Relaciones: Tareas
+  createdAssignments  Assignment[]  @relation("CreatedBy") // Tareas que el profesor creó
+  myAssignments       Assignment[]  @relation("AssignedTo") // Tareas asignadas al alumno (individuales)
   
-  // Relaciones Existentes
-  createdAssignments  Assignment[]  @relation("CreatedBy") // Tareas creadas (Teacher)
-  myAssignments       Assignment[]  @relation("AssignedTo") // Tareas recibidas (Student)
-  
-  // Relación Padre-Hijo
+  // Relaciones: Familia
   children            ParentChild[] @relation("Parent")
   parents             ParentChild[] @relation("Child")
 
-  // 👇 NUEVAS RELACIONES (FASE 2: CURSOS)
-  teachingCourses     Course[]      @relation("TeacherCourses") // Cursos que imparte (Teacher)
-  enrollments         Enrollment[]  // Cursos donde está inscrito (Student)
+  // Relaciones: Académicas
+  enrollments         Enrollment[]  // Materias donde es estudiante
+  subjectsTaught      Subject[]     @relation("TeacherSubjects") // Materias que imparte
+
+  // Relaciones: Exámenes
+  createdExams       Exam[]            
+  examSubmissions    ExamSubmission[] 
+
+  // (Fase 2 - Legacy/Future)
+  teachingCourses     Course[]      @relation("TeacherCourses")
+
+  // Mensajería (v2.0)
+  conversationsCreated       Conversation[]            @relation("ConversationsCreated")
+  conversationsParticipating ConversationParticipant[] @relation("ConversationParticipations")
+  messagesSent               Message[]                 @relation("MessagesSent")
+
+  // Notificaciones (v2.0)
+  notifications Notification[]
+
+  // Foros por materia (v2.0, Bloque 2)
+  forumThreadsCreated ForumThread[] @relation("ForumThreadsCreated")
+  forumPostsCreated   ForumPost[]   @relation("ForumPostsCreated")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  createdExams       Exam[]            // Exámenes que crea el profesor
-  examSubmissions    ExamSubmission[]  // Exámenes que resuelve el estudiante
 }
 
-// TABLA PIVOTE PADRE-HIJO
+// Tabla Pivote para relación Mucho-a-Muchos (Padres <-> Hijos)
 model ParentChild {
   parentId  Int
   childId   Int
@@ -60,53 +97,62 @@ model ParentChild {
   @@id([parentId, childId])
 }
 
-// ASIGNATURAS (Ej: Matemáticas, Historia)
+// ==========================================
+// MÓDULO ACADÉMICO (CORE)
+// ==========================================
+
 model Subject {
-  id          Int          @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   name        String
   
-  // Relaciones
-  assignments Assignment[] // Mantenemos esto para compatibilidad con tareas viejas
-  courses     Course[]     // 👇 Una materia tiene muchos cursos (Matemáticas -> 4to A, 4to B)
-
-  exams       Exam[]       // Exámenes de esta materia
-}
-
-// 👇 NUEVO MODELO: CURSO (El Aula Virtual, ej: "Matemáticas 4to A")
-model Course {
-  id          Int      @id @default(autoincrement())
-  name        String   
+  // Código único para unirse (Ej: MAT-101)
+  // Senior Note: Debe ser único para evitar conflictos al unirse
+  code        String   @unique 
   description String?
-  code        String   @unique // Código único para unirse (ej: MAT-2025-A)
-  
-  // Relaciones
-  subjectId   Int
-  subject     Subject  @relation(fields: [subjectId], references: [id])
-  
+
+  // Profesor Titular
   teacherId   Int
-  teacher     User     @relation("TeacherCourses", fields: [teacherId], references: [id])
-  
-  students    Enrollment[] // Estudiantes inscritos
-  assignments Assignment[] // Tareas de este curso
+  teacher     User     @relation("TeacherSubjects", fields: [teacherId], references: [id])
+
+  // Multi-centro (v2.0): nullable temporalmente hasta completar el backfill, luego se vuelve NOT NULL
+  educationalCenterId Int?
+  educationalCenter   EducationalCenter? @relation(fields: [educationalCenterId], references: [id])
+
+  // Relaciones del Sistema
+  enrollments Enrollment[]
+  assignments Assignment[]
+  exams       Exam[]
+  forumThreads ForumThread[]
+
+  // (Fase 2)
+  courses     Course[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
-// 👇 NUEVO MODELO: MATRÍCULA (Tabla Pivote Estudiante <-> Curso)
 model Enrollment {
+  id        Int      @id @default(autoincrement())
+
   studentId Int
-  student   User   @relation(fields: [studentId], references: [id])
+  student   User     @relation(fields: [studentId], references: [id])
   
-  courseId  Int
-  course    Course @relation(fields: [courseId], references: [id])
+  subjectId Int
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  
+  // 👇 ESTADO DE LA INSCRIPCIÓN (Control de acceso)
+  status    EnrollmentStatus @default(PENDING)
   
   enrolledAt DateTime @default(now())
 
-  @@id([studentId, courseId]) // Evita que un estudiante se inscriba doble
+  // Restricción: Un alumno no puede inscribirse doble a la misma materia
+  @@unique([studentId, subjectId]) 
 }
 
-// TAREAS (ASSIGNMENTS) - ACTUALIZADO
+// ==========================================
+// MÓDULO DE ACTIVIDADES (TAREAS)
+// ==========================================
+
 model Assignment {
   id          Int              @id @default(autoincrement())
   title       String
@@ -114,106 +160,303 @@ model Assignment {
   dueDate     DateTime
   
   status      AssignmentStatus @default(PENDING) 
-  
   grade       Int?
 
-  // 📂 ARCHIVOS Y COMENTARIOS
-  attachmentUrl     String? 
-  submissionUrl     String? 
-  submissionComment String? 
-  feedback          String? 
-  
-  fileUrl           String?
+  // Gestión de Archivos y Entregas
+  attachmentUrl     String? // Archivo adjunto por el profesor
+  submissionUrl     String? // Archivo entregado por el alumno
+  submissionComment String? // Comentario del alumno al entregar
+  feedback          String? // Feedback del profesor
+  fileUrl           String? // (Legacy/Backup)
 
-  // RELACIONES
-  // 👇 CAMBIO IMPORTANTE: Hacemos Subject opcional (?) para transicionar a Course
-  subjectId   Int?
-  subject     Subject? @relation(fields: [subjectId], references: [id])
-
-  // 👇 NUEVO CAMPO: Relación con Curso (Opcional por ahora para no romper tareas viejas)
-  courseId    Int?
-  course      Course?  @relation(fields: [courseId], references: [id])
+  // Relaciones
+  subjectId   Int
+  subject     Subject @relation(fields: [subjectId], references: [id])
 
   creatorId   Int
-  creator     User     @relation("CreatedBy", fields: [creatorId], references: [id])
+  creator     User    @relation("CreatedBy", fields: [creatorId], references: [id])
 
-  studentId   Int?
+  // Asignación específica (Opcional, si es null es para todos los de la materia)
+  studentId   Int?    
   student     User?   @relation("AssignedTo", fields: [studentId], references: [id])
+
+  // (Fase 2)
+  courseId    Int?
+  course      Course? @relation(fields: [courseId], references: [id])
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
+// ==========================================
+// MÓDULO DE EXÁMENES
+// ==========================================
+
 model Exam {
-  id          Int       @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   title       String
   description String?
   
-  // Relaciones
   subjectId   Int
-  subject     Subject   @relation(fields: [subjectId], references: [id])
+  subject     Subject  @relation(fields: [subjectId], references: [id])
   teacherId   Int
-  teacher     User      @relation(fields: [teacherId], references: [id])
+  teacher     User     @relation(fields: [teacherId], references: [id])
   
   questions   Question[]
   submissions ExamSubmission[]
+  
   showResults Boolean  @default(false)
-
-  // Tiempos
-  dueDate     DateTime? // Fecha límite opcional
-  duration    Int?      // Duración en minutos (ej: 60 mins)
+  dueDate     DateTime? 
+  duration    Int?      // En minutos
+  
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
 
 model Question {
-  id          Int       @id @default(autoincrement())
-  text        String    // "¿Cuánto es 2 + 2?"
-  points      Int       @default(1) // Cuánto vale esta pregunta
+  id        Int      @id @default(autoincrement())
+  text      String   
+  points    Int      @default(1) 
   
-  examId      Int
-  exam        Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  examId    Int
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
   
-  options     Option[]
-  answers     Answer[]  // Respuestas de los alumnos a esta pregunta
+  options   Option[]
+  answers   Answer[] 
 }
 
 model Option {
-  id          Int       @id @default(autoincrement())
-  text        String    // "4"
-  isCorrect   Boolean   @default(false) // ¿Es la correcta?
+  id        Int      @id @default(autoincrement())
+  text      String   
+  isCorrect Boolean  @default(false) 
   
-  questionId  Int
-  question    Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  
-  // No necesitamos relación inversa a Answer aquí, guardaremos el ID de la opción elegida
+  questionId Int
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
 }
 
-// Intento/Entrega del Examen
 model ExamSubmission {
-  id          Int       @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   
   studentId   Int
-  student     User      @relation(fields: [studentId], references: [id])
+  student     User     @relation(fields: [studentId], references: [id])
   
   examId      Int
-  exam        Exam      @relation(fields: [examId], references: [id])
+  exam        Exam     @relation(fields: [examId], references: [id])
   
-  score       Float?    // Nota final (Calculada automáticamente)
-  submittedAt DateTime  @default(now())
+  score       Float?   
+  submittedAt DateTime @default(now())
   
   answers     Answer[]
 }
 
-// Respuesta individual del alumno
 model Answer {
-  id            Int       @id @default(autoincrement())
+  id               Int            @id @default(autoincrement())
   
-  submissionId  Int
-  submission    ExamSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  submissionId     Int
+  submission       ExamSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
   
-  questionId    Int
-  question      Question       @relation(fields: [questionId], references: [id])
+  questionId       Int
+  question         Question       @relation(fields: [questionId], references: [id])
   
-  selectedOptionId Int // La opción que el alumno eligió
+  selectedOptionId Int 
 }
+
+// ==========================================
+// MÓDULO FUTURE-PROOF (Fase 2)
+// ==========================================
+
+model Course {
+  id          Int      @id @default(autoincrement())
+  name        String   
+  description String?
+  code        String   @unique 
+  
+  subjectId   Int
+  subject     Subject  @relation(fields: [subjectId], references: [id])
+  
+  teacherId   Int
+  teacher     User     @relation("TeacherCourses", fields: [teacherId], references: [id])
+  
+  assignments Assignment[] 
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+
+// ==========================================
+// MÓDULO MULTI-CENTRO (v2.0)
+// ==========================================
+
+model EducationalCenter {
+  id        Int      @id @default(autoincrement())
+  name      String
+  code      String   @unique
+  logoUrl   String?
+  isActive  Boolean  @default(true)
+
+  users         User[]
+  subjects      Subject[]
+  conversations Conversation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ==========================================
+// MÓDULO DE MENSAJERÍA (v2.0)
+// ==========================================
+
+enum ConversationType {
+  DIRECT
+  GROUP
+  ANNOUNCEMENT
+}
+
+model Conversation {
+  id                  Int              @id @default(autoincrement())
+  type                ConversationType
+  subject             String?
+
+  // Nullable a propósito: permite hilos "de plataforma" (ADMIN <-> ADMIN o
+  // conversaciones donde participan usuarios de más de un centro). El control
+  // de acceso real de una conversación es "eres participante", no el centro;
+  // esta columna sirve para listados/reportes por centro (ver assertConversationParticipant).
+  educationalCenterId Int?
+  educationalCenter   EducationalCenter? @relation(fields: [educationalCenterId], references: [id])
+
+  createdById         Int
+  createdBy           User              @relation("ConversationsCreated", fields: [createdById], references: [id])
+
+  participants        ConversationParticipant[]
+  messages            Message[]
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([educationalCenterId])
+}
+
+model ConversationParticipant {
+  id             Int          @id @default(autoincrement())
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  userId         Int
+  user           User         @relation("ConversationParticipations", fields: [userId], references: [id])
+
+  // Clave para "no leídos" en O(1): en vez de una fila de lectura por mensaje
+  lastReadAt     DateTime?
+  isArchived     Boolean      @default(false)
+  joinedAt       DateTime     @default(now())
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id                  Int          @id @default(autoincrement())
+  conversationId      Int
+  conversation        Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  senderId            Int
+  sender              User         @relation("MessagesSent", fields: [senderId], references: [id])
+
+  body                String
+
+  // Denormalizado a propósito (ver nota en Conversation.educationalCenterId): nullable por el mismo motivo
+  educationalCenterId Int?
+
+  createdAt           DateTime  @default(now())
+  editedAt            DateTime?
+  deletedAt           DateTime? // soft delete: no rompe el hilo para el resto de participantes
+
+  @@index([conversationId, createdAt])
+  @@index([educationalCenterId])
+}
+
+// ==========================================
+// MÓDULO DE NOTIFICACIONES (v2.0)
+// ==========================================
+
+enum NotificationType {
+  NEW_MESSAGE
+  ANNOUNCEMENT
+  TASK_ASSIGNED
+  GRADE_PUBLISHED
+  FORUM_REPLY
+  SYSTEM
+}
+
+model Notification {
+  id      Int              @id @default(autoincrement())
+  userId  Int
+  user    User             @relation(fields: [userId], references: [id])
+  type    NotificationType
+  title   String
+  body    String?
+  link    String?
+  isRead  Boolean          @default(false)
+
+  // Denormalizado igual que en Message/Conversation, mismo motivo: nullable
+  // porque un ADMIN de plataforma puede recibir notificaciones sin centro único.
+  educationalCenterId Int?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+}
+
+
+// ==========================================
+// MÓDULO DE FOROS POR MATERIA (v2.0, Bloque 2)
+// ==========================================
+
+model ForumThread {
+  id        Int      @id @default(autoincrement())
+  title     String
+  body      String
+
+  subjectId Int
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  authorId  Int
+  author    User     @relation("ForumThreadsCreated", fields: [authorId], references: [id])
+
+  isPinned  Boolean  @default(false)
+  isLocked  Boolean  @default(false)
+
+  // Denormalizado (mismo motivo que Message/Conversation): filtro de seguridad
+  // directo por centro sin depender de un join a Subject en cada query.
+  educationalCenterId Int?
+
+  posts     ForumPost[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([subjectId, isPinned, updatedAt])
+  @@index([educationalCenterId])
+}
+
+model ForumPost {
+  id       Int         @id @default(autoincrement())
+
+  threadId Int
+  thread   ForumThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  authorId Int
+  author   User        @relation("ForumPostsCreated", fields: [authorId], references: [id])
+
+  body     String
+
+  educationalCenterId Int?
+
+  createdAt DateTime  @default(now())
+  editedAt  DateTime?
+  deletedAt DateTime? // soft delete: moderación sin romper el hilo para otros
+
+  @@index([threadId, createdAt])
+  @@index([educationalCenterId])
+}
+

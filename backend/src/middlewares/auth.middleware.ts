@@ -7,6 +7,8 @@ export interface AuthRequest extends Request {
   user?: {
     userId: number;
     role: RoleName;
+    // v2.0: null solo para ADMIN (rol de plataforma, no pertenece a un centro)
+    educationalCenterId: number | null;
   };
 }
 
@@ -29,7 +31,8 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
     // ✅ Inyectamos el usuario en la request
     (req as AuthRequest).user = {
       userId: Number(decoded.userId),
-      role: decoded.role as RoleName
+      role: decoded.role as RoleName,
+      educationalCenterId: decoded.educationalCenterId != null ? Number(decoded.educationalCenterId) : null
     };
 
     next();
