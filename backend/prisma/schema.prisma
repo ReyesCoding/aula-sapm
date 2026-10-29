@@ -95,6 +95,9 @@ model User {
   calendarEventsOwned   CalendarEvent[] @relation("CalendarEventsOwned")
   calendarEventsCreated CalendarEvent[] @relation("CalendarEventsCreated")
 
+  // Archivos y documentos (v2.0, Bloque 6)
+  documentsUploaded Document[] @relation("DocumentsUploaded")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -138,6 +141,7 @@ model Subject {
   evaluations Evaluation[]
   attendanceRecords Attendance[]
   calendarEvents CalendarEvent[]
+  documents Document[]
 
   // (Fase 2)
   courses     Course[]
@@ -388,6 +392,8 @@ model Message {
 
   @@index([conversationId, createdAt])
   @@index([educationalCenterId])
+
+  attachments Document[]
 }
 
 // ==========================================
@@ -474,6 +480,7 @@ model ForumPost {
   @@index([threadId, createdAt])
   @@index([educationalCenterId])
 }
+
 // ==========================================
 // MÓDULO DE CALIFICACIONES (v2.0, Bloque 3)
 // ==========================================
@@ -528,6 +535,7 @@ model Evaluation {
   @@index([studentId, subjectId])
   @@index([educationalCenterId])
 }
+
 // ==========================================
 // MÓDULO DE ASISTENCIA (v2.0, Bloque 4)
 // ==========================================
@@ -573,6 +581,7 @@ model Attendance {
   @@index([studentId])
   @@index([educationalCenterId])
 }
+
 // ==========================================
 // MÓDULO DE CALENDARIO ACADÉMICO (v2.0, Bloque 5)
 // ==========================================
@@ -620,3 +629,44 @@ model CalendarEvent {
   @@index([educationalCenterId])
 }
 
+// ==========================================
+// MÓDULO DE ARCHIVOS Y DOCUMENTOS (v2.0, Bloque 6)
+// ==========================================
+
+// Nota: las Tareas (Assignment) YA tenían su propio mecanismo de archivo
+// (attachmentUrl/submissionUrl, un solo archivo por fila) desde antes de v2.0 —
+// no se tocó, para no romper lo existente. Este modelo cubre lo que faltaba:
+// materiales de una materia (varios archivos, con metadata) y adjuntos de
+// mensajería (ver messaging.controller.ts).
+model Document {
+  id           Int      @id @default(autoincrement())
+
+  // Nombre único en disco, generado por el mismo multer.diskStorage que ya
+  // usan las Tareas (ver middlewares/upload.middleware.ts) — mismo patrón,
+  // misma carpeta /uploads, mismo serving estático.
+  filename     String
+  originalName String   // nombre original del archivo, para mostrar/descargar
+  mimeType     String
+  size         Int      // bytes
+
+  uploadedById Int
+  uploadedBy   User     @relation("DocumentsUploaded", fields: [uploadedById], references: [id])
+
+  // Exactamente uno de los dos debe estar presente — validado en el
+  // controller (documents para materia, o adjunto de un mensaje), no en el
+  // schema, para no tener que modelar una tabla polimórfica genérica.
+  subjectId    Int?
+  subject      Subject? @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  messageId    Int?
+  message      Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  // Denormalizado (mismo motivo que el resto del módulo v2.0).
+  educationalCenterId Int?
+
+  createdAt    DateTime @default(now())
+
+  @@index([subjectId])
+  @@index([messageId])
+  @@index([educationalCenterId])
+}

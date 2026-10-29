@@ -14,8 +14,12 @@ import { notifyNewMessage } from '../services/notification.service';
 
 const MESSAGE_PAGE_SIZE = 30;
 
-/** Falla con 403 si el usuario no es participante activo de la conversación. Devuelve el registro de participación. */
-async function assertConversationParticipant(conversationId: number, userId: number) {
+/**
+ * Falla con 403 si el usuario no es participante activo de la conversación. Devuelve el registro de participación.
+ * Exportado porque documents.routes.ts / document.controller.ts (Bloque 6) necesita el mismo chequeo para
+ * autorizar la descarga/borrado de un adjunto de mensaje.
+ */
+export async function assertConversationParticipant(conversationId: number, userId: number) {
   const participant = await prisma.conversationParticipant.findUnique({
     where: { conversationId_userId: { conversationId, userId } },
   });
@@ -180,6 +184,7 @@ export const getConversation = asyncHandler(async (req: Request, res: Response) 
 
   const messages = await prisma.message.findMany({
     where: { conversationId, deletedAt: null },
+    include: { attachments: true },
     orderBy: { createdAt: 'desc' },
     take: MESSAGE_PAGE_SIZE,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -196,11 +201,27 @@ async function createMessageInternal(
   conversationId: number,
   senderId: number,
   body: string,
-  educationalCenterId: number | null
+  educationalCenterId: number | null,
+  file?: Express.Multer.File
 ) {
   const message = await prisma.message.create({
     data: { conversationId, senderId, body, educationalCenterId },
   });
+
+  // Bloque 6: adjunto opcional en el mensaje.
+  if (file) {
+    await prisma.document.create({
+      data: {
+        filename: file.filename,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        uploadedById: senderId,
+        messageId: message.id,
+        educationalCenterId,
+      },
+    });
+  }
 
   await prisma.conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } });
 
@@ -219,7 +240,11 @@ async function createMessageInternal(
     educationalCenterId,
   });
 
-  return message;
+  const messageWithAttachments = await prisma.message.findUnique({
+    where: { id: message.id },
+    include: { attachments: true },
+  });
+  return messageWithAttachments;
 }
 
 // POST /api/messages/conversations/:id/messages
@@ -227,8 +252,12 @@ export const sendMessage = asyncHandler(async (req: Request, res: Response) => {
   const user = (req as AuthRequest).user!;
   const conversationId = Number(req.params.id);
   const { body } = req.body as { body?: string };
+  // Bloque 6: adjunto opcional (multipart, campo "file"; ver messaging.routes.ts).
+  const file = (req as Express.Request & { file?: Express.Multer.File }).file;
 
-  if (!body || !body.trim()) throw new HttpError(400, 'El mensaje no puede estar vacío');
+  if ((!body || !body.trim()) && !file) {
+    throw new HttpError(400, 'El mensaje debe tener texto o un archivo adjunto');
+  }
 
   await assertConversationParticipant(conversationId, user.userId);
 
@@ -239,7 +268,13 @@ export const sendMessage = asyncHandler(async (req: Request, res: Response) => {
     throw new HttpError(403, 'Solo quien creó el anuncio puede publicar en él');
   }
 
-  const message = await createMessageInternal(conversationId, user.userId, body, conversation.educationalCenterId);
+  const message = await createMessageInternal(
+    conversationId,
+    user.userId,
+    body?.trim() ?? '',
+    conversation.educationalCenterId,
+    file
+  );
 
   res.status(201).json(message);
 });

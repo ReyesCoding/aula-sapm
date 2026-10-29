@@ -22,6 +22,7 @@ import forumRoutes from './routes/forum.routes';
 import gradesRoutes from './routes/grades.routes';
 import attendanceRoutes from './routes/attendance.routes';
 import calendarRoutes from './routes/calendar.routes';
+import documentsRoutes from './routes/documents.routes';
 
 // Configuración de entorno
 dotenv.config();
@@ -77,6 +78,7 @@ app.use('/api/forums', forumRoutes);
 app.use('/api/grades', gradesRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/calendar', calendarRoutes);
+app.use('/api/documents', documentsRoutes);
 
 // ⚠️ Manejo de Errores Global (Siempre al final)
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
