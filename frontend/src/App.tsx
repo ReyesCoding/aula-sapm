@@ -5,6 +5,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Profile } from './pages/Profile';
 import { ProtectedRoute } from './components/ProtectedRoute'; 
 import SubjectDetail from './pages/SubjectDetail';
+import Messages from './pages/Messages';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
              <Route path="/dashboard" element={<Dashboard />} />
              <Route path="/profile" element={<Profile />} />
              <Route path="/subject/:id" element={<SubjectDetail />} />
+             <Route path="/messages" element={<Messages />} />
           </Route>
 
           {/* Redirección raíz */}
