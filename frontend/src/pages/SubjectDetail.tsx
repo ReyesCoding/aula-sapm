@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getAssignmentsBySubject } from '../services/assignment.service';
 import { getExamsBySubject, toggleExamResults } from '../services/exam.service';
-import { Loader2, ArrowLeft, ArrowRight, Plus, FileText, BrainCircuit, Users, Calendar, Settings, Upload, CheckCircle, Award } from 'lucide-react';
+import { Loader2, ArrowLeft, ArrowRight, Plus, FileText, BrainCircuit, Users, Calendar, Settings, Upload, CheckCircle, Award, ClipboardCheck } from 'lucide-react';
 
 // Componentes
 import { CreateExamModal } from '../components/CreateExamModal';
@@ -13,6 +13,7 @@ import { ExamResultsModal } from '../components/ExamResultsModal';
 import { TaskManagementModal } from '../components/TaskManagementModal';
 import { SubmitAssignmentModal } from '../components/SubmitAssignmentModal';
 import { GradesPanel } from '../components/GradesPanel';
+import { AttendancePanel } from '../components/AttendancePanel';
 
 // ------------------------------------------------------------------
 // 1. INTERFACES (Tipado estricto)
@@ -59,7 +60,7 @@ export default function SubjectDetail() {
   const navigate = useNavigate();
   const location = useLocation();
   
-  const [activeTab, setActiveTab] = useState<'assignments' | 'exams' | 'grades'>('assignments');
+  const [activeTab, setActiveTab] = useState<'assignments' | 'exams' | 'grades' | 'attendance'>('assignments');
   const [loading, setLoading] = useState(true);
   
   // --- ESTADOS DE MODALES ---
@@ -197,6 +198,14 @@ export default function SubjectDetail() {
             }`}
           >
             <Award size={18}/> Calificaciones
+          </button>
+          <button
+            onClick={() => setActiveTab('attendance')}
+            className={`pb-3 px-6 font-medium text-sm flex items-center gap-2 border-b-2 transition-colors ${
+              activeTab === 'attendance' ? 'border-sky-600 text-sky-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <ClipboardCheck size={18}/> Asistencia
           </button>
         </div>
 
@@ -354,6 +363,11 @@ export default function SubjectDetail() {
           {/* CALIFICACIONES */}
           {activeTab === 'grades' && (
             <GradesPanel subjectId={Number(id)} />
+          )}
+
+          {/* ASISTENCIA */}
+          {activeTab === 'attendance' && (
+            <AttendancePanel subjectId={Number(id)} />
           )}
         </div>
 
