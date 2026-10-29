@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getAssignmentsBySubject } from '../services/assignment.service';
 import { getExamsBySubject, toggleExamResults } from '../services/exam.service';
-import { Loader2, ArrowLeft, ArrowRight, Plus, FileText, BrainCircuit, Users, Calendar, Settings, Upload, CheckCircle, Award, ClipboardCheck, MessageCircle } from 'lucide-react';
+import { Loader2, ArrowLeft, ArrowRight, Plus, FileText, BrainCircuit, Users, Calendar, Settings, Upload, CheckCircle, Award, ClipboardCheck, MessageCircle, FolderOpen } from 'lucide-react';
 
 // Componentes
 import { CreateExamModal } from '../components/CreateExamModal';
@@ -15,6 +15,7 @@ import { SubmitAssignmentModal } from '../components/SubmitAssignmentModal';
 import { GradesPanel } from '../components/GradesPanel';
 import { AttendancePanel } from '../components/AttendancePanel';
 import { ForumPanel } from '../components/ForumPanel';
+import { DocumentsPanel } from '../components/DocumentsPanel';
 
 // ------------------------------------------------------------------
 // 1. INTERFACES (Tipado estricto)
@@ -61,7 +62,7 @@ export default function SubjectDetail() {
   const navigate = useNavigate();
   const location = useLocation();
   
-  const [activeTab, setActiveTab] = useState<'assignments' | 'exams' | 'grades' | 'attendance' | 'forum'>('assignments');
+  const [activeTab, setActiveTab] = useState<'assignments' | 'exams' | 'grades' | 'attendance' | 'forum' | 'documents'>('assignments');
   const [loading, setLoading] = useState(true);
   
   // --- ESTADOS DE MODALES ---
@@ -215,6 +216,14 @@ export default function SubjectDetail() {
             }`}
           >
             <MessageCircle size={18}/> Foro
+          </button>
+          <button
+            onClick={() => setActiveTab('documents')}
+            className={`pb-3 px-6 font-medium text-sm flex items-center gap-2 border-b-2 transition-colors ${
+              activeTab === 'documents' ? 'border-amber-600 text-amber-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <FolderOpen size={18}/> Documentos
           </button>
         </div>
 
@@ -382,6 +391,11 @@ export default function SubjectDetail() {
           {/* FORO */}
           {activeTab === 'forum' && (
             <ForumPanel subjectId={Number(id)} />
+          )}
+
+          {/* DOCUMENTOS */}
+          {activeTab === 'documents' && (
+            <DocumentsPanel subjectId={Number(id)} />
           )}
         </div>
 
