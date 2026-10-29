@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { X, Clock, AlertCircle, Loader2, Check } from 'lucide-react'; // 👈 Eliminado XCircle
+import { X, Clock, AlertCircle, Loader2, Check, XCircle } from 'lucide-react'; // ✅ XCircle se usa ahora
 import { getExamById, submitExamResponses } from '../services/exam.service';
 
 interface Props {
@@ -14,7 +14,7 @@ interface Props {
 interface Option {
   id: number;
   text: string;
-  isCorrect?: boolean; // Opcional, solo viene si showResults=true
+  isCorrect?: boolean;
 }
 
 interface Question {
@@ -48,10 +48,8 @@ export const TakeExamModal = ({
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [result, setResult] = useState<{ score: number } | null>(null);
 
-  // 1️⃣ Memoizamos loadExam
   const loadExam = useCallback(async () => {
     setLoading(true);
-    // Solo reseteamos si NO es revisión, para mantener el score inicial si existe
     if (!isReviewMode) {
         setResult(null);
         setAnswers({});
@@ -60,7 +58,6 @@ export const TakeExamModal = ({
     try {
       const data = await getExamById(examId);
       setExam(data);
-      // Solo iniciamos el timer si es un intento nuevo
       if (!isReviewMode && !initialScore) {
           setTimeLeft(data.duration * 60);
       }
@@ -71,7 +68,6 @@ export const TakeExamModal = ({
     }
   }, [examId, isReviewMode, initialScore]);
 
-  // 2️⃣ Memoizamos handleSubmit
   const handleSubmit = useCallback(async (isAutoSubmit = false) => {
     if (!exam) return;
 
@@ -102,20 +98,14 @@ export const TakeExamModal = ({
     }
   }, [exam, answers, examId]);
 
-  // 3️⃣ Efecto Principal
   useEffect(() => {
     if (!isOpen) return;
-
-    // SIEMPRE cargamos el examen para tener los metadatos (preguntas, puntos, showResults)
     loadExam();
-
-    // Si es revisión, establecemos el resultado visual inmediatamente
     if (isReviewMode && initialScore !== undefined && initialScore !== null) {
         setResult({ score: initialScore });
     }
   }, [isOpen, examId, isReviewMode, initialScore, loadExam]);
 
-  // 4️⃣ Efecto del Timer
   useEffect(() => {
     if (timeLeft === null || result) return; 
 
@@ -196,11 +186,11 @@ export const TakeExamModal = ({
                       </p>
                    </div>
 
-                   {/* DETALLE DE RESPUESTAS (Solo si es revisión y está habilitado) */}
+                   {/* DETALLE DE RESPUESTAS */}
                    {isReviewMode && exam?.showResults ? (
                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
                           <h4 className="font-bold text-gray-700 border-b pb-2 flex items-center gap-2">
-                             <Check size={18} className="text-green-600"/> Respuestas Correctas
+                             <Check size={18} className="text-green-600"/> Revisión de Respuestas
                           </h4>
                           {exam.questions.map((q, idx) => (
                              <div key={q.id} className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
@@ -209,16 +199,30 @@ export const TakeExamModal = ({
                                    <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded h-fit ml-auto">{q.points} pts</span>
                                 </p>
                                 <div className="space-y-2">
-                                   {q.options.map(opt => (
-                                      <div key={opt.id} className={`p-2 rounded border flex justify-between items-center ${
-                                          opt.isCorrect 
-                                            ? 'bg-green-50 border-green-200 text-green-800 font-medium' 
-                                            : 'border-transparent text-gray-400'
-                                      }`}>
-                                         <span>{opt.text}</span>
-                                         {opt.isCorrect && <Check size={16} className="text-green-600" />}
-                                      </div>
-                                   ))}
+                                   {q.options.map(opt => {
+                                      // 👇 LÓGICA DE COLOR CORREGIDA (SENIOR) - Ahora usamos las variables
+                                      const isSelected = answers[q.id] === opt.id;
+                                      const isCorrect = opt.isCorrect;
+                                      
+                                      let itemClass = 'border-transparent text-gray-500';
+                                      let icon = null;
+
+                                      if (isCorrect) {
+                                          itemClass = 'bg-green-50 border-green-200 text-green-800 font-medium';
+                                          icon = <Check size={16} className="text-green-600" />;
+                                      } else if (isSelected && !isCorrect) {
+                                          // 🔴 Aquí usamos XCircle e isSelected para marcar el error del usuario
+                                          itemClass = 'bg-red-50 border-red-200 text-red-800 font-medium';
+                                          icon = <XCircle size={16} className="text-red-600" />;
+                                      }
+
+                                      return (
+                                        <div key={opt.id} className={`p-2 rounded border flex justify-between items-center ${itemClass}`}>
+                                           <span>{opt.text}</span>
+                                           {icon}
+                                        </div>
+                                      );
+                                   })}
                                 </div>
                              </div>
                           ))}
@@ -245,7 +249,7 @@ export const TakeExamModal = ({
               );
             })()
           ) : (
-            // VISTA PREGUNTAS (Modo Tomar Examen)
+            // VISTA PREGUNTAS
             <div className="space-y-8">
               {exam?.questions.map((q, idx) => (
                 <div key={q.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition">
@@ -295,7 +299,6 @@ export const TakeExamModal = ({
           )}
         </div>
 
-        {/* FOOTER (Solo visible si no hay resultados) */}
         {!loading && !result && (
           <div className="p-4 border-t bg-white flex justify-between items-center">
             <div className="text-sm text-gray-500 flex items-center gap-2">

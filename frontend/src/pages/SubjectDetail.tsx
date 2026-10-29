@@ -1,21 +1,29 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getAssignmentsBySubject } from '../services/assignment.service';
 import { getExamsBySubject, toggleExamResults } from '../services/exam.service';
-// 👇 CORRECCIÓN 1: Agregado ArrowRight a los imports
-import { Loader2, ArrowLeft, ArrowRight, Plus, FileText, BrainCircuit, Users, Calendar } from 'lucide-react';
+import { Loader2, ArrowLeft, ArrowRight, Plus, FileText, BrainCircuit, Users, Calendar, Settings, Upload, CheckCircle } from 'lucide-react';
 
+// Componentes
 import { CreateExamModal } from '../components/CreateExamModal';
 import { CreateTaskModal } from '../components/CreateTaskModal';
 import { TakeExamModal } from '../components/TakeExamModal';
 import { ExamResultsModal } from '../components/ExamResultsModal';
+import { TaskManagementModal } from '../components/TaskManagementModal';
+import { SubmitAssignmentModal } from '../components/SubmitAssignmentModal';
+
+// ------------------------------------------------------------------
+// 1. INTERFACES (Tipado estricto)
+// ------------------------------------------------------------------
 
 interface AssignmentSummary {
   id: number;
   title: string;
   description: string | null;
   dueDate: string;
+  status?: 'PENDING' | 'SUBMITTED' | 'GRADED' | 'LATE'; 
+  grade?: number | null;
   subject: { name: string };
 }
 
@@ -30,25 +38,46 @@ interface ExamSummary {
   score: number | null;
 }
 
+// 👇 Nueva interfaz para la edición de tareas
+interface TaskToEdit {
+  id: number;
+  title: string;
+  description: string;
+  dueDate: string;
+  subjectId: number;
+  attachmentUrl?: string;
+}
+
+// ------------------------------------------------------------------
+// 2. COMPONENTE PRINCIPAL
+// ------------------------------------------------------------------
+
 export default function SubjectDetail() {
   const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   
   const [activeTab, setActiveTab] = useState<'assignments' | 'exams'>('assignments');
   const [loading, setLoading] = useState(true);
   
+  // --- ESTADOS DE MODALES ---
   const [isExamModalOpen, setIsExamModalOpen] = useState(false);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [selectedTaskForManagement, setSelectedTaskForManagement] = useState<number | null>(null);
+  const [resultsModalData, setResultsModalData] = useState<{id: number, title: string} | null>(null);
+  const [selectedTaskForSubmission, setSelectedTaskForSubmission] = useState<{id: number, title: string} | null>(null);
   
+  // 👇 AQUÍ ESTABA EL ERROR: Solo declaramos esto UNA vez y con el tipo correcto
+  const [taskDataToEdit, setTaskDataToEdit] = useState<TaskToEdit | null>(null);
+
   const [selectedExamInfo, setSelectedExamInfo] = useState<{
     id: number; 
     score: number | null; 
     isSubmitted: boolean;
   } | null>(null);
 
-  const [resultsModalData, setResultsModalData] = useState<{id: number, title: string} | null>(null);
-  
+  // Datos
   const [assignments, setAssignments] = useState<AssignmentSummary[]>([]);
   const [exams, setExams] = useState<ExamSummary[]>([]);
   const [subjectName, setSubjectName] = useState("Cargando materia...");
@@ -70,7 +99,7 @@ export default function SubjectDetail() {
       } else if (tasksData.length > 0) {
         setSubjectName(tasksData[0].subject.name);
       } else {
-        setSubjectName(`Aula Virtual ${id}`);
+        setSubjectName(`Aula Virtual`);
       }
       
     } catch (error) {
@@ -85,12 +114,25 @@ export default function SubjectDetail() {
     loadData();
   }, [loadData]);
 
-  // 👇 CORRECCIÓN 2: Eliminamos la variable 'error' del catch porque no se usaba
+  // Navegación Inteligente
+  useEffect(() => {
+    if (location.state) {
+        if (location.state.activeTab) {
+            setActiveTab(location.state.activeTab);
+        }
+        if (location.state.highlightId && location.state.activeTab === 'assignments') {
+            if (user?.role === 'TEACHER') {
+                setSelectedTaskForManagement(location.state.highlightId);
+            }
+            window.history.replaceState({}, document.title);
+        }
+    }
+  }, [location, user?.role]);
+
   const handleToggleVisibility = async (examId: number) => {
     try {
         await toggleExamResults(examId);
-        const updatedExams = await getExamsBySubject(Number(id));
-        setExams(updatedExams);
+        setExams(prev => prev.map(e => e.id === examId ? { ...e, showResults: !e.showResults } : e));
     } catch {
         alert("Error al cambiar la visibilidad");
     }
@@ -115,7 +157,7 @@ export default function SubjectDetail() {
           {user?.role === 'TEACHER' && (
             <div className="flex gap-3">
               <button 
-                onClick={() => setIsTaskModalOpen(true)}
+                onClick={() => { setTaskDataToEdit(null); setIsTaskModalOpen(true); }} // Limpiamos edit data al crear nuevo
                 className="flex items-center gap-2 bg-white text-blue-600 border border-blue-200 px-4 py-2 rounded-lg hover:bg-blue-50 transition shadow-sm font-medium"
               >
                 <Plus size={18}/> Nueva Tarea
@@ -134,9 +176,7 @@ export default function SubjectDetail() {
           <button
             onClick={() => setActiveTab('assignments')}
             className={`pb-3 px-6 font-medium text-sm flex items-center gap-2 border-b-2 transition-colors ${
-              activeTab === 'assignments' 
-                ? 'border-blue-600 text-blue-600' 
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+              activeTab === 'assignments' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             <FileText size={18}/> Tareas ({assignments.length})
@@ -144,9 +184,7 @@ export default function SubjectDetail() {
           <button
             onClick={() => setActiveTab('exams')}
             className={`pb-3 px-6 font-medium text-sm flex items-center gap-2 border-b-2 transition-colors ${
-              activeTab === 'exams' 
-                ? 'border-purple-600 text-purple-600' 
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+              activeTab === 'exams' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             <BrainCircuit size={18}/> Exámenes ({exams.length})
@@ -155,6 +193,7 @@ export default function SubjectDetail() {
 
         <div className="space-y-4">
           
+          {/* LISTA DE TAREAS */}
           {activeTab === 'assignments' && (
             assignments.length === 0 ? (
               <div className="text-center py-10 bg-white rounded-xl border border-dashed text-gray-400">
@@ -162,61 +201,100 @@ export default function SubjectDetail() {
               </div>
             ) : (
               <div className="grid gap-4">
-                {assignments.map((task) => (
-                  <div key={task.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 hover:border-blue-200 transition flex justify-between items-center">
-                    <div>
-                      <h3 className="font-bold text-gray-800">{task.title}</h3>
-                      <p className="text-sm text-gray-500 mt-1">{task.description}</p>
+                {assignments.map((task) => {
+                  const isSubmitted = task.status === 'SUBMITTED' || task.status === 'GRADED';
+                  const isGraded = task.status === 'GRADED';
+                  
+                  return (
+                  <div key={task.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 hover:border-blue-200 transition flex flex-col sm:flex-row justify-between sm:items-center gap-4 group">
+                    <div className="flex-1">
+                      <h3 className="font-bold text-gray-800 text-lg group-hover:text-blue-600 transition-colors">{task.title}</h3>
+                      <p className="text-sm text-gray-500 mt-1 line-clamp-1">{task.description || 'Sin descripción'}</p>
+                      <div className="mt-2 flex items-center gap-3">
+                          <span className="text-xs font-bold px-2 py-1 bg-gray-100 rounded text-gray-600 flex items-center gap-1 w-fit">
+                            <Calendar size={12}/> {new Date(task.dueDate).toLocaleDateString()}
+                          </span>
+                          
+                          {user?.role === 'STUDENT' && (
+                              isGraded ? (
+                                <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded border border-green-100">
+                                    Nota: {task.grade}/100
+                                </span>
+                              ) : isSubmitted ? (
+                                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-100">
+                                    Entregado
+                                </span>
+                              ) : (
+                                <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100">
+                                    Pendiente
+                                </span>
+                              )
+                          )}
+                      </div>
                     </div>
-                    <div className="text-right">
-                       <span className="text-xs font-bold px-2 py-1 bg-gray-100 rounded text-gray-600 flex items-center gap-1">
-                         <Calendar size={12}/> Vence: {new Date(task.dueDate).toLocaleDateString()}
-                       </span>
+                    
+                    <div className="flex items-center gap-3 self-end sm:self-center">
+                        {user?.role === 'TEACHER' && (
+                            <button 
+                                onClick={() => setSelectedTaskForManagement(task.id)}
+                                className="flex items-center gap-1 text-sm bg-gray-50 hover:bg-blue-50 text-gray-600 hover:text-blue-600 px-3 py-1.5 rounded-md border border-gray-200 transition font-medium"
+                            >
+                                <Settings size={14} /> Gestionar
+                            </button>
+                        )}
+
+                        {user?.role === 'STUDENT' && !isSubmitted && (
+                            <button 
+                                onClick={() => setSelectedTaskForSubmission({ id: task.id, title: task.title })}
+                                className="flex items-center gap-2 text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition shadow-sm font-bold"
+                            >
+                                <Upload size={16} /> Entregar Tarea
+                            </button>
+                        )}
+                        
+                        {user?.role === 'STUDENT' && isSubmitted && (
+                             <div className="flex items-center gap-2 text-green-600 font-medium text-sm">
+                                <CheckCircle size={18}/> ¡Listo!
+                             </div>
+                        )}
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             )
           )}
 
+          {/* LISTA DE EXÁMENES */}
           {activeTab === 'exams' && (
             exams.length === 0 ? (
               <div className="text-center py-10 bg-white rounded-xl border border-dashed text-gray-400">
-                No hay exámenes creados en esta materia.
+                No hay exámenes creados.
               </div>
             ) : (
               <div className="grid gap-4">
                 {exams.map((exam) => {
                    const isExpired = exam.dueDate ? new Date(exam.dueDate) < new Date() : false;
                    const statusColor = isExpired ? "border-l-gray-400" : "border-l-purple-500";
-                   const statusBadge = isExpired 
-                      ? <span className="text-xs font-bold bg-gray-100 text-gray-500 px-2 py-1 rounded border border-gray-200">Cerrado</span>
-                      : <span className="text-xs font-bold bg-green-50 text-green-700 px-2 py-1 rounded border border-green-100 flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div> Activo</span>;
-
+                   
                    return (
                   <div key={exam.id} className={`bg-white p-5 rounded-xl shadow-sm border border-l-4 ${statusColor} hover:shadow-md transition flex flex-col sm:flex-row justify-between gap-4 items-start sm:items-center`}>
                     
                     <div className="flex-1">
                         <div className="flex items-center gap-3 mb-1">
                             <h3 className="font-bold text-gray-800 text-lg">{exam.title}</h3>
-                            {statusBadge}
+                            {isExpired 
+                              ? <span className="text-xs font-bold bg-gray-100 text-gray-500 px-2 py-1 rounded border border-gray-200">Cerrado</span>
+                              : <span className="text-xs font-bold bg-green-50 text-green-700 px-2 py-1 rounded border border-green-100 flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div> Activo</span>
+                            }
                         </div>
                         <div className="text-sm text-gray-500 space-y-1">
                             <p className="flex items-center gap-2">
                                 <BrainCircuit size={14} className="text-purple-400"/> {exam._count.questions} Preguntas
                             </p>
-                            {exam.dueDate ? (
-                                <p className={`text-xs font-medium flex items-center gap-1 ${isExpired ? 'text-gray-400' : 'text-orange-600'}`}>
-                                    <Calendar size={12}/> Vence: {new Date(exam.dueDate).toLocaleString()}
-                                </p>
-                            ) : (
-                                <p className="text-xs text-gray-400 italic">Sin fecha límite</p>
-                            )}
                         </div>
                     </div>
 
                     <div className="w-full sm:w-auto flex justify-end">
-                      
                       {user?.role === 'TEACHER' ? (
                         <div className="flex items-center gap-4 bg-gray-50 p-2 rounded-lg border border-gray-200">
                             <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600 select-none hover:text-gray-900 transition-colors">
@@ -228,9 +306,7 @@ export default function SubjectDetail() {
                                 />
                                 <span className="font-medium text-xs">Revisión {exam.showResults ? "ON" : "OFF"}</span>
                             </label>
-                            
                             <div className="h-6 w-px bg-gray-300 mx-1"></div>
-
                             <button 
                                 onClick={() => setResultsModalData({ id: exam.id, title: exam.title })}
                                 className="text-blue-600 hover:text-blue-800 font-bold text-sm flex items-center gap-1.5 px-2 py-1 rounded hover:bg-blue-50 transition"
@@ -239,37 +315,19 @@ export default function SubjectDetail() {
                             </button>
                         </div>
                       ) : (
-                        
                         exam.isSubmitted ? (
                           <div className="flex flex-col items-end gap-1">
-                             <span className={`px-3 py-1 rounded text-sm font-bold border ${
-                                (exam.score || 0) >= 70 
-                                ? 'bg-green-50 text-green-700 border-green-100' 
-                                : 'bg-red-50 text-red-700 border-red-100'
-                             }`}>
+                             <span className={`px-3 py-1 rounded text-sm font-bold border ${ (exam.score || 0) >= 70 ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100' }`}>
                               {exam.score} pts
-                            </span>
-                            <button 
-                              onClick={() => setSelectedExamInfo({ 
-                                id: exam.id, 
-                                score: exam.score, 
-                                isSubmitted: true 
-                              })} 
-                              className="text-gray-500 hover:text-blue-600 underline text-xs font-medium"
-                            >
+                             </span>
+                             <button onClick={() => setSelectedExamInfo({ id: exam.id, score: exam.score, isSubmitted: true })} className="text-gray-500 hover:text-blue-600 underline text-xs font-medium">
                               Ver corrección
-                            </button>
+                             </button>
                           </div>
                         ) : (
                           !isExpired ? (
-                              <button 
-                                onClick={() => setSelectedExamInfo({ 
-                                    id: exam.id, 
-                                    score: null, 
-                                    isSubmitted: false 
-                                })}
-                                className="text-sm bg-purple-600 text-white px-5 py-2 rounded-lg hover:bg-purple-700 transition shadow-sm font-bold flex items-center gap-2"
-                              >
+                              <button onClick={() => setSelectedExamInfo({ id: exam.id, score: null, isSubmitted: false })}
+                                className="text-sm bg-purple-600 text-white px-5 py-2 rounded-lg hover:bg-purple-700 transition shadow-sm font-bold flex items-center gap-2">
                                 Comenzar <ArrowRight size={16} />
                               </button>
                           ) : (
@@ -285,39 +343,53 @@ export default function SubjectDetail() {
           )}
         </div>
 
-        <CreateExamModal 
-          isOpen={isExamModalOpen}
-          onClose={() => setIsExamModalOpen(false)}
-          subjectId={Number(id)}
-          onSuccess={loadData}
-        />
-
+        {/* ================= MODALES ================= */}
+        
+        {/* 1. CREAR EXAMEN */}
+        <CreateExamModal isOpen={isExamModalOpen} onClose={() => setIsExamModalOpen(false)} subjectId={Number(id)} onSuccess={loadData} />
+        
+        {/* 2. CREAR/EDITAR TAREA (Híbrido) */}
         {user?.role === 'TEACHER' && isTaskModalOpen && (
            <CreateTaskModal 
-             isOpen={isTaskModalOpen}
-             onClose={() => setIsTaskModalOpen(false)}
-             onTaskCreated={loadData}
+              isOpen={isTaskModalOpen} 
+              onClose={() => { setIsTaskModalOpen(false); setTaskDataToEdit(null); }} // Limpiar al cerrar
+              onTaskCreated={loadData} 
+              initialData={taskDataToEdit} // Pasamos la data si existe
            />
         )}
+        
+        {/* 3. GESTIONAR TAREA */}
+        {user?.role === 'TEACHER' && selectedTaskForManagement && (
+            <TaskManagementModal 
+                isOpen={!!selectedTaskForManagement} 
+                onClose={() => setSelectedTaskForManagement(null)} 
+                assignmentId={selectedTaskForManagement}
+                onTaskUpdated={loadData}
+                onEditRequested={(data) => {
+                    setTaskDataToEdit(data); // Guardamos la data a editar
+                    setIsTaskModalOpen(true); // Abrimos el modal de creación (en modo edición)
+                }}
+            />
+        )}
 
+        {/* 4. ENTREGAR TAREA (Alumno) */}
+        {user?.role === 'STUDENT' && selectedTaskForSubmission && (
+            <SubmitAssignmentModal 
+                isOpen={!!selectedTaskForSubmission} 
+                onClose={() => setSelectedTaskForSubmission(null)} 
+                assignmentId={selectedTaskForSubmission.id}
+                assignmentTitle={selectedTaskForSubmission.title}
+                onSuccess={loadData}
+            />
+        )}
+
+        {/* 5. EXAMENES */}
         {selectedExamInfo && (
-          <TakeExamModal
-            isOpen={!!selectedExamInfo}
-            onClose={() => setSelectedExamInfo(null)}
-            examId={selectedExamInfo.id}
-            initialScore={selectedExamInfo.score}
-            isReviewMode={selectedExamInfo.isSubmitted}
-            onExamSubmitted={loadData}
-          />
+          <TakeExamModal isOpen={!!selectedExamInfo} onClose={() => setSelectedExamInfo(null)} examId={selectedExamInfo.id} initialScore={selectedExamInfo.score} isReviewMode={selectedExamInfo.isSubmitted} onExamSubmitted={loadData} />
         )}
 
         {resultsModalData && (
-            <ExamResultsModal 
-                isOpen={!!resultsModalData}
-                onClose={() => setResultsModalData(null)}
-                examId={resultsModalData.id}
-                examTitle={resultsModalData.title}
-            />
+            <ExamResultsModal isOpen={!!resultsModalData} onClose={() => setResultsModalData(null)} examId={resultsModalData.id} examTitle={resultsModalData.title} />
         )}
 
       </div>

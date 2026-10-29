@@ -1,68 +1,95 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Save, Loader2, AlertCircle, UploadCloud, FileText } from 'lucide-react'; // 👈 Agregamos iconos de archivo
-import { createAssignment } from '../services/assignment.service';
-import { getCourses } from '../services/course.service';
-import type { Course } from '../services/course.service';
+import { X, Save, Loader2, AlertCircle, UploadCloud, FileText } from 'lucide-react';
+import api from '../services/api'; 
 import { useAuth } from '../context/AuthContext';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onTaskCreated: () => void;
+  initialData?: {
+      id: number;
+      title: string;
+      description: string;
+      dueDate: string;
+      subjectId: number;
+      attachmentUrl?: string;
+  } | null;
 }
 
-export const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }: Props) => {
+interface Subject {
+  id: number;
+  name: string;
+  code?: string;
+  teacherId?: number;
+  teacher?: { id: number; name: string; };
+}
+
+interface ApiError {
+    response?: { data?: { message?: string; }; };
+    message?: string;
+}
+
+export const CreateTaskModal = ({ isOpen, onClose, onTaskCreated, initialData }: Props) => {
   const { user } = useAuth();
+  
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [courseId, setCourseId] = useState<number | string>('');
-  
-  // 👇 ESTADO PARA EL ARCHIVO
+  const [subjectId, setSubjectId] = useState<string>(''); 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  const [courses, setCourses] = useState<Course[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(false);
-  const [loadingCourses, setLoadingCourses] = useState(false); 
+  const [loadingSubjects, setLoadingSubjects] = useState(false); 
   const [error, setError] = useState<string | null>(null);
 
-  // Cargar cursos con seguridad (useCallback)
-  const loadCourses = useCallback(async () => {
+  const loadSubjects = useCallback(async () => {
     try {
-      setLoadingCourses(true);
-      const data = await getCourses();
-      
+      setLoadingSubjects(true);
+      const res = await api.get('/subjects'); 
       const userId = Number(user?.id);
-      
-      const myCourses = data.filter(c => {
-        // Validación robusta: backend puede enviar teacherId o teacher.id
-        const courseTeacherId = c.teacherId ? Number(c.teacherId) : Number(c.teacher?.id);
-        return courseTeacherId === userId;
+      const mySubjects = res.data.filter((s: Subject) => {
+          const teacherId = s.teacherId ? Number(s.teacherId) : (s.teacher ? Number(s.teacher.id) : null);
+          return teacherId === userId;
       });
-      
-      setCourses(myCourses);
+      setSubjects(mySubjects);
     } catch (err) {
       console.error(err);
-      setError('Error cargando la lista de cursos.');
+      setError('Error cargando la lista de materias.');
     } finally {
-      setLoadingCourses(false);
+      setLoadingSubjects(false);
     }
   }, [user?.id]);
 
   useEffect(() => {
     if (isOpen) {
-      loadCourses();
-      // Resetear formulario completo
-      setTitle('');
-      setDescription('');
-      setDueDate('');
-      setCourseId('');
-      setSelectedFile(null); // 👈 Limpiar archivo
+      loadSubjects();
+      
+      if (initialData) {
+          setTitle(initialData.title);
+          setDescription(initialData.description || '');
+          
+          // 👇 SENIOR FIX: Convertir ISO string a formato compatible con datetime-local (YYYY-MM-DDTHH:mm)
+          // Cortamos los segundos y la zona horaria para que el input lo lea bien
+          const dateObj = new Date(initialData.dueDate);
+          // Ajuste para zona horaria local (truco para inputs datetime-local)
+          const offset = dateObj.getTimezoneOffset() * 60000;
+          const localISOTime = (new Date(dateObj.getTime() - offset)).toISOString().slice(0, 16);
+          
+          setDueDate(localISOTime);
+          setSubjectId(String(initialData.subjectId));
+      } else {
+          setTitle('');
+          setDescription('');
+          setDueDate('');
+          setSubjectId('');
+      }
+      setSelectedFile(null);
       setError(null);
     }
-  }, [isOpen, loadCourses]);
+  }, [isOpen, loadSubjects, initialData]);
 
-  // 👇 MANEJADOR DE SELECCIÓN DE ARCHIVO
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setSelectedFile(e.target.files[0]);
@@ -73,38 +100,43 @@ export const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }: Props) => {
     e.preventDefault();
     if (loading) return;
 
-    if (!courseId) {
-      setError('Debes seleccionar un curso.');
+    if (!subjectId) {
+      setError('Debes seleccionar una materia.');
       return;
-    }
-
-    const selectedCourse = courses.find(c => c.id === Number(courseId));
-    if (!selectedCourse) {
-        setError('Error: Curso no válido.');
-        return;
     }
 
     try {
       setLoading(true); 
       setError(null);
 
-      // Preparamos los datos base
-      const assignmentData = {
-        title,
-        description,
-        dueDate,
-        courseId: Number(courseId),
-        subjectId: selectedCourse.subject.id
-      };
+      const formData = new FormData();
+      formData.append('title', title);
+      formData.append('description', description);
+      // 👇 Importante: Enviamos la fecha completa ISO al backend
+      formData.append('dueDate', new Date(dueDate).toISOString()); 
+      
+      if (selectedFile) {
+        formData.append('file', selectedFile);
+      }
 
-      // 👇 ENVIAMOS DATA + ARCHIVO
-      await createAssignment(assignmentData, selectedFile);
+      if (initialData) {
+          await api.patch(`/assignments/${initialData.id}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+      } else {
+          formData.append('subjectId', subjectId);
+          await api.post('/assignments', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+      }
 
       onTaskCreated(); 
       onClose();       
     } catch (err: unknown) {
-      const errorObj = err as { response?: { data?: { message?: string } }, message?: string };
-      setError(errorObj.response?.data?.message || 'Error al crear la tarea.');
+      const errorObj = err as ApiError;
+      console.error(err);
+      setError(errorObj.response?.data?.message || errorObj.message || 'Error al guardar la tarea.');
+    } finally {
       setLoading(false); 
     }
   };
@@ -115,17 +147,15 @@ export const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }: Props) => {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
         
-        {/* Header */}
-        <div className="bg-primary px-6 py-4 flex justify-between items-center text-white rounded-t-xl">
+        <div className="bg-blue-600 px-6 py-4 flex justify-between items-center text-white rounded-t-xl">
           <h3 className="font-bold text-lg flex items-center gap-2">
-            <Save size={20} /> Nueva Tarea
+            <Save size={20} /> {initialData ? 'Editar Tarea' : 'Nueva Tarea'}
           </h3>
           <button onClick={onClose} className="hover:bg-white/20 p-1 rounded transition-colors">
             <X size={20} />
           </button>
         </div>
 
-        {/* Formulario */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
           
           {error && (
@@ -139,7 +169,7 @@ export const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }: Props) => {
             <input 
               type="text" 
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary outline-none"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 outline-none"
               placeholder="Ej: Examen Parcial de Álgebra"
               value={title}
               onChange={e => setTitle(e.target.value)}
@@ -147,27 +177,28 @@ export const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }: Props) => {
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Curso</label>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Materia</label>
             <select 
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary outline-none bg-white"
-              value={courseId}
-              onChange={e => setCourseId(e.target.value)}
-              disabled={loadingCourses}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 outline-none bg-white"
+              value={subjectId}
+              onChange={e => setSubjectId(e.target.value)}
+              disabled={loadingSubjects || !!initialData}
             >
-              <option value="">-- Selecciona un curso --</option>
-              {courses.map(course => (
-                <option key={course.id} value={course.id}>
-                  {course.name} ({course.code})
+              <option value="">-- Selecciona una materia --</option>
+              {subjects.map(subject => (
+                <option key={subject.id} value={subject.id}>
+                  {subject.name} {subject.code ? `(${subject.code})` : ''}
                 </option>
               ))}
             </select>
-            {loadingCourses && <p className="text-xs text-gray-400 mt-1">Cargando cursos...</p>}
+            {loadingSubjects && <p className="text-xs text-gray-400 mt-1">Cargando materias...</p>}
           </div>
 
-          {/* 👇 SECCIÓN DE SUBIDA DE ARCHIVOS (VISUALMENTE MEJORADA) */}
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Material Adjunto (Opcional)</label>
+            <label className="block text-sm font-bold text-gray-700 mb-1">
+                {initialData ? 'Reemplazar Archivo (Opcional)' : 'Material Adjunto (Opcional)'}
+            </label>
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:bg-gray-50 transition-colors relative group">
                 <input 
                     type="file" 
@@ -177,27 +208,33 @@ export const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }: Props) => {
                 <div className="flex flex-col items-center justify-center gap-2 text-gray-500">
                     {selectedFile ? (
                         <>
-                            <FileText className="text-primary" size={32} />
+                            <FileText className="text-blue-600" size={32} />
                             <p className="text-sm font-bold text-gray-800">{selectedFile.name}</p>
                             <p className="text-xs text-green-600 font-bold">Listo para subir</p>
                         </>
                     ) : (
                         <>
-                            <UploadCloud size={32} className="group-hover:text-primary transition-colors" />
+                            <UploadCloud size={32} className="group-hover:text-blue-600 transition-colors" />
                             <p className="text-sm font-medium">Arrastra un archivo o haz clic aquí</p>
                             <p className="text-xs text-gray-400">PDF, Word, Imágenes (Max 10MB)</p>
                         </>
                     )}
                 </div>
             </div>
+            {initialData?.attachmentUrl && !selectedFile && (
+                <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                    <FileText size={12}/> Archivo actual: {initialData.attachmentUrl}
+                </p>
+            )}
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Fecha de Entrega</label>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Fecha y Hora de Entrega</label>
+            {/* 👇 CAMBIO: datetime-local para control preciso */}
             <input 
               type="datetime-local" 
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary outline-none"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 outline-none"
               value={dueDate}
               onChange={e => setDueDate(e.target.value)}
             />
@@ -207,14 +244,13 @@ export const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }: Props) => {
             <label className="block text-sm font-bold text-gray-700 mb-1">Descripción</label>
             <textarea 
               rows={3}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary outline-none resize-none"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 outline-none resize-none"
               placeholder="Detalles de la tarea..."
               value={description}
               onChange={e => setDescription(e.target.value)}
             />
           </div>
 
-          {/* Footer de Acciones */}
           <div className="pt-4 flex gap-3">
             <button 
               type="button" 
@@ -227,10 +263,10 @@ export const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }: Props) => {
             <button 
               type="submit" 
               disabled={loading} 
-              className="flex-1 py-2.5 rounded-lg bg-primary text-white font-bold hover:bg-blue-700 transition-colors shadow-md flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+              className="flex-1 py-2.5 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 transition-colors shadow-md flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {loading ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-              {loading ? 'Guardando...' : 'Crear Tarea'}
+              {loading ? 'Guardando...' : (initialData ? 'Actualizar Tarea' : 'Crear Tarea')}
             </button>
           </div>
 

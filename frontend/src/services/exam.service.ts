@@ -1,4 +1,3 @@
-// ❌ Borramos esta línea: import axios from 'axios';
 // ✅ Usamos ÚNICAMENTE la instancia configurada
 import api from './api';
 
@@ -26,7 +25,6 @@ export interface CreateExamDTO {
   duration?: number;
   dueDate?: string;       
   showResults?: boolean;  
-  // -----------------------
   questions: {
     text: string;
     points: number;
@@ -51,7 +49,7 @@ export interface SubmitExamDTO {
   }[];
 }
 
-// Obtener un examen individual por ID (para que el alumno lo vea)
+// Obtener un examen individual
 export const getExamById = async (id: number) => {
   const response = await api.get(`/exams/${id}`);
   return response.data;
@@ -60,7 +58,7 @@ export const getExamById = async (id: number) => {
 // Enviar el examen resuelto
 export const submitExamResponses = async (data: SubmitExamDTO) => {
   const response = await api.post('/exams/submit', data);
-  return response.data; // El backend nos devolverá la nota (score)
+  return response.data; 
 };
 
 // 👇 Interfaces para los resultados
@@ -75,15 +73,14 @@ export interface ExamSubmissionResult {
   submittedAt?: string; 
 }
 
-// 👇 Función para obtener los resultados de un examen (Solo Profesor)
+// 👇 CORRECCIÓN 1: Endpoint correcto (/results)
 export const getExamSubmissions = async (examId: number): Promise<ExamSubmissionResult[]> => {
-  // ✅ CORREGIDO: Usamos 'api' en lugar de 'axios'
-  const response = await api.get(`/exams/${examId}/submissions`);
+  const response = await api.get(`/exams/${examId}/results`); // Antes: /submissions
   return response.data;
 };
 
+// 👇 CORRECCIÓN 2: Endpoint correcto (/toggle)
 export const toggleExamResults = async (examId: number) => {
-  // ✅ CORREGIDO: Usamos 'api' en lugar de 'axios'
-  const response = await api.patch(`/exams/${examId}/toggle-visibility`);
-  return response.data; // { showResults: boolean }
+  const response = await api.patch(`/exams/${examId}/toggle`); // Antes: /toggle-visibility
+  return response.data; 
 };
