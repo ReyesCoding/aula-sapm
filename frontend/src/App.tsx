@@ -6,6 +6,7 @@ import { Profile } from './pages/Profile';
 import { ProtectedRoute } from './components/ProtectedRoute'; 
 import SubjectDetail from './pages/SubjectDetail';
 import Messages from './pages/Messages';
+import CalendarPage from './pages/Calendar';
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
              <Route path="/profile" element={<Profile />} />
              <Route path="/subject/:id" element={<SubjectDetail />} />
              <Route path="/messages" element={<Messages />} />
+             <Route path="/calendar" element={<CalendarPage />} />
           </Route>
 
           {/* Redirección raíz */}

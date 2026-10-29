@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, GraduationCap, MessageCircle } from 'lucide-react';
+import { LogOut, GraduationCap, MessageCircle, CalendarDays } from 'lucide-react';
 // 👇 1. Importamos el hook de navegación
 import { useNavigate } from 'react-router-dom';
 import { getGlobalUnreadCount } from '../services/messaging.service';
@@ -67,6 +67,14 @@ export const Navbar = () => {
                   {unreadCount > 99 ? '99+' : unreadCount}
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={() => navigate('/calendar')}
+              className="p-2 rounded-full hover:bg-blue-800 transition-colors"
+              title="Calendario"
+            >
+              <CalendarDays size={22} />
             </button>
 
             <div className="text-right hidden sm:block">

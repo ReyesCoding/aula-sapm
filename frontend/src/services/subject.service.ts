@@ -3,6 +3,7 @@ import api from './api';
 export interface Subject {
   id: number;
   name: string;
+  teacher?: { id: number; name: string } | null;
   _count?: {
     assignments: number;
     exams: number;
