@@ -25,7 +25,13 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
 
   jwt.verify(token, secret, (err: any, decoded: any) => {
     if (err) {
-      return res.status(403).json({ message: 'Token inválido o expirado' });
+      // 401, no 403: token inválido/expirado significa "no autenticado", no
+      // "autenticado pero sin permiso". El interceptor del frontend decide
+      // si cierra sesión basándose en este código - si esto fuera 403 se
+      // confundiría con un 403 legítimo de autorización (p.ej. sin centro
+      // asignado) y cerraría sesión por un error que no tiene nada que ver
+      // con el token.
+      return res.status(401).json({ message: 'Token inválido o expirado' });
     }
 
     // ✅ Inyectamos el usuario en la request

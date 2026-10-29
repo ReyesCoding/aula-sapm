@@ -25,7 +25,13 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+    // Solo 401: token ausente/inválido/expirado -> no autenticado, cerrar sesión.
+    // 403 es "autenticado pero sin permiso para ESTA acción" (rol incorrecto,
+    // centro distinto, etc.) y no debe cerrar la sesión completa - eso
+    // convertiría cualquier error de permisos puntual en una desconexión
+    // confusa. authenticateToken (backend) devuelve 401 para token
+    // inválido/expirado específicamente por esto.
+    if (error.response && error.response.status === 401) {
       // Si el error no viene del login, cerramos sesión
       if (error.config && !error.config.url.includes('/auth/login')) {
         console.warn("Sesión expirada o inválida. Cerrando sesión...");
