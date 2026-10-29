@@ -124,9 +124,9 @@ export const gradeAssignment = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    // Validación básica de permisos (mejorable si cruzamos con Subject)
     if (assignment.creatorId !== userId) {
-       // Aquí podrías agregar validación extra contra Subject.teacherId si fuera necesario
+      res.status(403).json({ message: 'No tienes permiso para calificar esta tarea' });
+      return;
     }
 
     const numericGrade = Number(grade);
