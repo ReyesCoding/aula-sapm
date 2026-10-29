@@ -91,6 +91,10 @@ model User {
   attendanceAsStudent Attendance[] @relation("AttendanceOfStudent")
   attendanceRecorded  Attendance[] @relation("AttendanceRecordedBy")
 
+  // Calendario académico (v2.0, Bloque 5)
+  calendarEventsOwned   CalendarEvent[] @relation("CalendarEventsOwned")
+  calendarEventsCreated CalendarEvent[] @relation("CalendarEventsCreated")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -133,6 +137,7 @@ model Subject {
   forumThreads ForumThread[]
   evaluations Evaluation[]
   attendanceRecords Attendance[]
+  calendarEvents CalendarEvent[]
 
   // (Fase 2)
   courses     Course[]
@@ -566,6 +571,52 @@ model Attendance {
   @@unique([subjectId, studentId, date])
   @@index([subjectId, date])
   @@index([studentId])
+  @@index([educationalCenterId])
+}
+// ==========================================
+// MÓDULO DE CALENDARIO ACADÉMICO (v2.0, Bloque 5)
+// ==========================================
+
+enum CalendarEventScope {
+  CENTER   // Evento del centro (o global de plataforma si educationalCenterId es null)
+  SUBJECT  // Evento de una materia (examen, entrega, clase especial)
+  PERSONAL // Evento privado de un usuario, solo él lo ve
+}
+
+model CalendarEvent {
+  id          Int                @id @default(autoincrement())
+  title       String
+  description String?
+  location    String?
+
+  startsAt    DateTime
+  endsAt      DateTime
+  allDay      Boolean            @default(false)
+
+  scope       CalendarEventScope
+
+  // SUBJECT: la materia a la que pertenece el evento.
+  subjectId   Int?
+  subject     Subject?           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  // PERSONAL: el dueño exclusivo del evento (solo él lo ve/edita/borra).
+  ownerId     Int?
+  owner       User?              @relation("CalendarEventsOwned", fields: [ownerId], references: [id])
+
+  createdById Int
+  createdBy   User               @relation("CalendarEventsCreated", fields: [createdById], references: [id])
+
+  // Denormalizado (mismo motivo que el resto del módulo v2.0): filtro directo
+  // por centro. En eventos CENTER, null = evento global de plataforma (solo ADMIN),
+  // igual semántica que GradePeriod.educationalCenterId.
+  educationalCenterId Int?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([scope, startsAt])
+  @@index([subjectId, startsAt])
+  @@index([ownerId, startsAt])
   @@index([educationalCenterId])
 }
 
