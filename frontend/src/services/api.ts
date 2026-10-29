@@ -1,9 +1,12 @@
 import axios from 'axios';
 
 // 1. Crear la instancia de Axios
-// ⚠️ CAMBIO CRÍTICO: Cambiamos 3001 a 3000 para coincidir con server.ts
+// Bloque 7 (deployment): baseURL relativa en vez de "http://localhost:3001" fijo.
+// En dev, el proxy de Vite (ver vite.config.ts) redirige /api al backend local.
+// En producción (Docker), nginx hace lo mismo dentro del contenedor del frontend.
+// Mismo código en los dos entornos, sin variables de entorno que mantener sincronizadas.
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api', 
+  baseURL: '/api',
 });
 
 // 2. Interceptor de Solicitud (Request)

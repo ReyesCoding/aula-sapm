@@ -1,0 +1,43 @@
+# Despliegue en el VPS (producción). No incluye un contenedor de Postgres:
+# la base de datos sigue siendo Neon (ver backend/docs/ARCHITECTURE_V2_MESSAGING.md,
+# sección 11) — usa el proyecto/rama de Neon de PRODUCCIÓN, no el de desarrollo.
+#
+# Uso:
+#   1. cp .env.example .env   y completa DATABASE_URL (Neon prod) y JWT_SECRET.
+#   2. docker compose build
+#   3. docker compose run --rm backend npx prisma migrate deploy
+#      (aplica las migraciones ya creadas en desarrollo; no genera nada nuevo)
+#   4. docker compose up -d
+#
+# Para desarrollo del día a día sigue siendo mejor `npm run dev` en la raíz
+# (ts-node-dev + vite, con hot-reload) — este compose es para producción.
+
+services:
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=3000
+      - NODE_ENV=production
+    volumes:
+      - uploads:/app/uploads
+    # Sin "ports": el backend no se expone directamente al host. El único
+    # punto de entrada público es "frontend" (nginx), que reenvía /api y
+    # /uploads internamente — mismo origen para el navegador, sin CORS.
+    expose:
+      - "3000"
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  uploads:

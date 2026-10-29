@@ -1,0 +1,120 @@
+name: CI
+
+# Solo CI por ahora (build + lint + typecheck en cada push/PR a main).
+# No hay deploy automático: el despliegue al VPS se dispara manualmente
+# (ver docker-compose.yml en la raíz y la sección 11 de
+# backend/docs/ARCHITECTURE_V2_MESSAGING.md).
+#
+# El job "docker" (abajo) compila y levanta docker-compose.yml en el runner
+# de GitHub (Linux real, Docker ya instalado) y confirma que /api/health
+# responde. Nació de necesitar una forma de verificar el Dockerfile/compose
+# sin depender de Docker Desktop en Windows, que en este proyecto tuvo
+# problemas irresolubles de WSL en la máquina de desarrollo — en vez de
+# perseguir eso, se corre la verificación real en Linux, gratis y en cada push.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # No necesita DATABASE_URL: genera el cliente a partir de prisma/schema.prisma,
+      # sin conectarse a ninguna base de datos.
+      - name: Generar cliente de Prisma
+        run: npx prisma generate
+
+      # NOTA: no hay un paso de "lint" para el backend — el script "lint" de
+      # package.json referencia eslint, pero el proyecto nunca llegó a tener
+      # eslint instalado ni configurado en backend/ (solo en frontend/). Es una
+      # limitación preexistente, no introducida en el Bloque 7; agregarlo es
+      # una mejora futura aparte, no bloquea el pipeline de hoy.
+      - name: Verificar tipos (tsc --noEmit)
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+  frontend:
+    name: Frontend (lint + typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # "npm run build" ya corre "tsc -b" antes de "vite build", así que el
+      # typecheck va incluido en este mismo paso.
+      - name: Build
+        run: npm run build
+
+  docker:
+    name: Docker Compose (build + smoke test)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build de las imágenes (backend + frontend)
+        run: docker compose build
+
+      - name: Levantar el stack y esperar a que responda
+        env:
+          # Valores de relleno SOLO para este smoke test: el healthcheck
+          # (GET /api/health) no toca la base de datos, así que no hace falta
+          # una conexión real a Neon para confirmar que los contenedores
+          # arrancan y que nginx sirve el frontend y proxya /api correctamente.
+          DATABASE_URL: "postgresql://user:pass@localhost:5432/ci_smoke_test"
+          JWT_SECRET: "ci-smoke-test-only-not-a-real-secret"
+        run: |
+          docker compose up -d
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost/api/health; then
+              echo ""
+              echo "OK: /api/health respondió a través de nginx -> backend"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "El healthcheck nunca respondió a tiempo" >&2
+          docker compose logs
+          exit 1
+
+      - name: Logs (siempre, para diagnóstico)
+        if: always()
+        run: docker compose logs
+
+      - name: Apagar el stack
+        if: always()
+        run: docker compose down -v

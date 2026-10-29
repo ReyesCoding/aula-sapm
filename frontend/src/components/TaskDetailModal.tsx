@@ -16,7 +16,6 @@ interface Props {
 
 export const TaskDetailModal = ({ isOpen, onClose, task, onUpdate }: Props) => {
   const { user } = useAuth();
-  const API_URL = 'http://localhost:3001'; 
 
   // Estados Generales
   const [loading, setLoading] = useState(false);
@@ -63,8 +62,9 @@ export const TaskDetailModal = ({ isOpen, onClose, task, onUpdate }: Props) => {
   // Cálculo de vencimiento para mostrar avisos
   const isExpired = new Date() > new Date(task.dueDate);
 
-  const teacherAttachmentUrl = task.attachmentUrl ? `${API_URL}/uploads/${task.attachmentUrl}` : null;
-  const studentSubmissionUrl = task.submissionUrl ? `${API_URL}/uploads/${task.submissionUrl}` : null;
+  // Bloque 7 (deployment): ruta relativa en vez de "http://localhost:3001" fijo (ver services/api.ts).
+  const teacherAttachmentUrl = task.attachmentUrl ? `/uploads/${task.attachmentUrl}` : null;
+  const studentSubmissionUrl = task.submissionUrl ? `/uploads/${task.submissionUrl}` : null;
 
   // --- ACCIONES ---
 
