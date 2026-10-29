@@ -87,6 +87,10 @@ model User {
   evaluationsReceived Evaluation[] @relation("EvaluationsReceived")
   evaluationsCreated  Evaluation[] @relation("EvaluationsCreated")
 
+  // Asistencia (v2.0, Bloque 4)
+  attendanceAsStudent Attendance[] @relation("AttendanceOfStudent")
+  attendanceRecorded  Attendance[] @relation("AttendanceRecordedBy")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -128,6 +132,7 @@ model Subject {
   exams       Exam[]
   forumThreads ForumThread[]
   evaluations Evaluation[]
+  attendanceRecords Attendance[]
 
   // (Fase 2)
   courses     Course[]
@@ -516,6 +521,51 @@ model Evaluation {
   updatedAt DateTime @updatedAt
 
   @@index([studentId, subjectId])
+  @@index([educationalCenterId])
+}
+// ==========================================
+// MÓDULO DE ASISTENCIA (v2.0, Bloque 4)
+// ==========================================
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+model Attendance {
+  id        Int              @id @default(autoincrement())
+
+  subjectId Int
+  subject   Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  studentId Int
+  student   User             @relation("AttendanceOfStudent", fields: [studentId], references: [id])
+
+  // Normalizado a medianoche UTC al grabar (ver attendance.controller.ts):
+  // un registro por alumno/materia/día, sin importar la hora de captura.
+  date      DateTime
+
+  status    AttendanceStatus
+
+  recordedById Int
+  recordedBy   User          @relation("AttendanceRecordedBy", fields: [recordedById], references: [id])
+
+  comment   String?
+
+  // Denormalizado (mismo motivo que Evaluation/Message): filtro directo por
+  // centro sin depender de un join a Subject en cada query.
+  educationalCenterId Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Un alumno tiene a lo sumo un registro de asistencia por materia y día
+  // (tomar asistencia dos veces el mismo día actualiza el mismo registro).
+  @@unique([subjectId, studentId, date])
+  @@index([subjectId, date])
+  @@index([studentId])
   @@index([educationalCenterId])
 }
 
