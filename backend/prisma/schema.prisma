@@ -83,6 +83,10 @@ model User {
   forumThreadsCreated ForumThread[] @relation("ForumThreadsCreated")
   forumPostsCreated   ForumPost[]   @relation("ForumPostsCreated")
 
+  // Calificaciones (v2.0, Bloque 3)
+  evaluationsReceived Evaluation[] @relation("EvaluationsReceived")
+  evaluationsCreated  Evaluation[] @relation("EvaluationsCreated")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -123,6 +127,7 @@ model Subject {
   assignments Assignment[]
   exams       Exam[]
   forumThreads ForumThread[]
+  evaluations Evaluation[]
 
   // (Fase 2)
   courses     Course[]
@@ -457,6 +462,60 @@ model ForumPost {
   deletedAt DateTime? // soft delete: moderación sin romper el hilo para otros
 
   @@index([threadId, createdAt])
+  @@index([educationalCenterId])
+}
+// ==========================================
+// MÓDULO DE CALIFICACIONES (v2.0, Bloque 3)
+// ==========================================
+
+model GradePeriod {
+  id        Int      @id @default(autoincrement())
+  name      String   // Ej: "Primer Parcial", "2do Trimestre"
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean  @default(true)
+
+  // Nullable: un periodo lo define ADMIN (global) o CENTRO (propio); igual que
+  // el resto del denormalizado, nullable no significa "sin dueño", significa
+  // "visible a todos" cuando es null (periodo de plataforma).
+  educationalCenterId Int?
+
+  evaluations Evaluation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([educationalCenterId])
+}
+
+model Evaluation {
+  id        Int      @id @default(autoincrement())
+
+  subjectId Int
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  studentId Int
+  student   User     @relation("EvaluationsReceived", fields: [studentId], references: [id])
+
+  teacherId Int
+  teacher   User     @relation("EvaluationsCreated", fields: [teacherId], references: [id])
+
+  periodId  Int?
+  period    GradePeriod? @relation(fields: [periodId], references: [id])
+
+  title   String   // Ej: "Participación en clase", "Proyecto final"
+  score   Float    // 0-100
+  weight  Float    @default(1) // Peso relativo dentro del promedio de la materia
+  comment String?
+
+  // Denormalizado (mismo motivo que Message/ForumThread): filtro directo por
+  // centro sin depender de un join a Subject en cada query.
+  educationalCenterId Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId, subjectId])
   @@index([educationalCenterId])
 }
 

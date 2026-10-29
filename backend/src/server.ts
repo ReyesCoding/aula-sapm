@@ -19,6 +19,7 @@ import messagingRoutes from './routes/messaging.routes';
 import notificationRoutes from './routes/notification.routes';
 import adminRoutes from './routes/admin.routes';
 import forumRoutes from './routes/forum.routes';
+import gradesRoutes from './routes/grades.routes';
 
 // Configuración de entorno
 dotenv.config();
@@ -71,6 +72,7 @@ app.use('/api/messages', messagingRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/forums', forumRoutes);
+app.use('/api/grades', gradesRoutes);
 
 // ⚠️ Manejo de Errores Global (Siempre al final)
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
