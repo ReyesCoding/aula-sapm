@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getAssignmentsBySubject } from '../services/assignment.service';
 import { getExamsBySubject, toggleExamResults } from '../services/exam.service';
-import { Loader2, ArrowLeft, ArrowRight, Plus, FileText, BrainCircuit, Users, Calendar, Settings, Upload, CheckCircle } from 'lucide-react';
+import { Loader2, ArrowLeft, ArrowRight, Plus, FileText, BrainCircuit, Users, Calendar, Settings, Upload, CheckCircle, Award } from 'lucide-react';
 
 // Componentes
 import { CreateExamModal } from '../components/CreateExamModal';
@@ -12,6 +12,7 @@ import { TakeExamModal } from '../components/TakeExamModal';
 import { ExamResultsModal } from '../components/ExamResultsModal';
 import { TaskManagementModal } from '../components/TaskManagementModal';
 import { SubmitAssignmentModal } from '../components/SubmitAssignmentModal';
+import { GradesPanel } from '../components/GradesPanel';
 
 // ------------------------------------------------------------------
 // 1. INTERFACES (Tipado estricto)
@@ -58,7 +59,7 @@ export default function SubjectDetail() {
   const navigate = useNavigate();
   const location = useLocation();
   
-  const [activeTab, setActiveTab] = useState<'assignments' | 'exams'>('assignments');
+  const [activeTab, setActiveTab] = useState<'assignments' | 'exams' | 'grades'>('assignments');
   const [loading, setLoading] = useState(true);
   
   // --- ESTADOS DE MODALES ---
@@ -188,6 +189,14 @@ export default function SubjectDetail() {
             }`}
           >
             <BrainCircuit size={18}/> Exámenes ({exams.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('grades')}
+            className={`pb-3 px-6 font-medium text-sm flex items-center gap-2 border-b-2 transition-colors ${
+              activeTab === 'grades' ? 'border-emerald-600 text-emerald-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Award size={18}/> Calificaciones
           </button>
         </div>
 
@@ -340,6 +349,11 @@ export default function SubjectDetail() {
                 )})}
               </div>
             )
+          )}
+
+          {/* CALIFICACIONES */}
+          {activeTab === 'grades' && (
+            <GradesPanel subjectId={Number(id)} />
           )}
         </div>
 

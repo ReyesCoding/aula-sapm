@@ -9,6 +9,7 @@ import {
   getStudentHistory,
   listPeriods,
   createPeriod,
+  listSubjectStudents,
 } from '../controllers/grades.controller';
 
 const router = Router();
@@ -20,6 +21,7 @@ router.post('/periods', createPeriod);
 
 router.post('/subjects/:subjectId/evaluations', createEvaluation);
 router.get('/subjects/:subjectId/evaluations', listEvaluations);
+router.get('/subjects/:subjectId/students', listSubjectStudents);
 router.get('/subjects/:subjectId/average', getSubjectAverage);
 
 router.patch('/evaluations/:id', updateEvaluation);

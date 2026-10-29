@@ -183,6 +183,25 @@ export const getStudentHistory = asyncHandler(async (req: Request, res: Response
   res.json(history);
 });
 
+// GET /api/grades/subjects/:subjectId/students   (roster de alumnos activos, para la UI de calificar)
+export const listSubjectStudents = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as AuthRequest).user!;
+  const subjectId = Number(req.params.subjectId);
+
+  const subject = await loadSubjectOrThrow(subjectId);
+  if (!canGradeSubject(user, subject)) {
+    throw new HttpError(403, 'No tienes permiso para ver el listado de esta materia');
+  }
+
+  const enrollments = await prisma.enrollment.findMany({
+    where: { subjectId, status: EnrollmentStatus.ACTIVE },
+    include: { student: { select: { id: true, name: true, email: true } } },
+    orderBy: { student: { name: 'asc' } },
+  });
+
+  res.json(enrollments.map((e) => e.student));
+});
+
 // GET /api/grades/periods   (lista los periodos del propio centro + los globales; ADMIN ve todos)
 export const listPeriods = asyncHandler(async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
