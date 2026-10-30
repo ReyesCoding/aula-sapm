@@ -138,6 +138,72 @@ export const searchUsers = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
+// --- 5b. VINCULAR HIJO A UN PADRE/MADRE (Admin) ---
+export const linkParentChild = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parentId = Number(req.params.id);
+    const { childId } = req.body as { childId?: number };
+
+    if (!childId) {
+      res.status(400).json({ message: 'childId es obligatorio' });
+      return;
+    }
+
+    const [parent, child] = await Promise.all([
+      prisma.user.findUnique({ where: { id: parentId } }),
+      prisma.user.findUnique({ where: { id: Number(childId) } }),
+    ]);
+
+    if (!parent || parent.role !== RoleName.PARENT) {
+      res.status(400).json({ message: 'El usuario indicado no es un Padre/Madre' });
+      return;
+    }
+    if (!child || child.role !== RoleName.STUDENT) {
+      res.status(400).json({ message: 'El childId indicado no corresponde a un Estudiante' });
+      return;
+    }
+
+    await prisma.parentChild.create({ data: { parentId, childId: child.id } });
+    res.status(201).json({ message: 'Hijo vinculado correctamente' });
+  } catch (error) {
+    if ((error as any).code === 'P2002') {
+      res.status(400).json({ message: 'Ese hijo ya está vinculado a este padre/madre' });
+      return;
+    }
+    console.error(error);
+    res.status(500).json({ error: 'Error vinculando hijo' });
+  }
+};
+
+// --- 5c. DESVINCULAR HIJO (Admin) ---
+export const unlinkParentChild = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parentId = Number(req.params.id);
+    const childId = Number(req.params.childId);
+
+    await prisma.parentChild.delete({ where: { parentId_childId: { parentId, childId } } });
+    res.json({ message: 'Hijo desvinculado' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error desvinculando hijo' });
+  }
+};
+
+// --- 5d. LISTAR HIJOS VINCULADOS (Admin) ---
+export const getParentChildren = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parentId = Number(req.params.id);
+    const links = await prisma.parentChild.findMany({
+      where: { parentId },
+      include: { child: { select: { id: true, name: true, email: true } } },
+    });
+    res.json(links.map((l) => l.child));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error listando hijos' });
+  }
+};
+
 // --- 5. ACTUALIZAR ROL (Admin - MANTENIDO) ---
 export const updateUserRole = async (req: Request, res: Response): Promise<void> => {
   try {

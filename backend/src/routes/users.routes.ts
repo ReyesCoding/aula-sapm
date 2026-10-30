@@ -6,7 +6,10 @@ import {
   deleteUser, 
   searchUsers, 
   updateUserRole,
-  updateProfile
+  updateProfile,
+  linkParentChild,
+  unlinkParentChild,
+  getParentChildren
 } from '../controllers/users.controller';
 import { RoleName } from '@prisma/client';
 
@@ -26,5 +29,10 @@ router.get('/', getAllUsers);
 router.post('/', createUser);          
 router.delete('/:id', deleteUser);     
 router.patch('/:id/role', updateUserRole);
+
+// 4. Vínculo Padre/Madre -> Hijo (Solo Admin)
+router.get('/:id/children', getParentChildren);
+router.post('/:id/children', linkParentChild);
+router.delete('/:id/children/:childId', unlinkParentChild);
 
 export default router;

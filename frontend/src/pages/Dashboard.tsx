@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-// 👇 IMPORTANTE: Importamos AcademicDashboard porque SÍ lo usamos
 import { AcademicDashboard } from '../components/dashboard/AcademicDashboard';
-// ❌ BORRAMOS AdminDashboard porque NO lo estamos usando aún y causaba el error
+import { AdminDashboard } from '../components/dashboard/AdminDashboard';
 import { Loader2, LogOut, User, Settings, ChevronDown, MessageCircle, CalendarDays } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getGlobalUnreadCount } from '../services/messaging.service';
@@ -122,12 +121,8 @@ export const Dashboard = () => {
       {/* Contenido Principal */}
       <main className="py-6">
         {user.role === 'ADMIN' ? (
-             <div className="text-center p-10 bg-white m-4 rounded shadow">
-                <h2 className="text-xl font-bold text-gray-800">Panel de Administrador</h2>
-                <p className="text-gray-500">Funcionalidad en construcción...</p>
-             </div>
+             <AdminDashboard />
         ) : (
-             // Aquí renderizamos el componente que YA TIENES creado
              <AcademicDashboard />
         )}
       </main>
