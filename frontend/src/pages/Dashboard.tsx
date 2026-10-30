@@ -1,14 +1,30 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 // 👇 IMPORTANTE: Importamos AcademicDashboard porque SÍ lo usamos
 import { AcademicDashboard } from '../components/dashboard/AcademicDashboard';
 // ❌ BORRAMOS AdminDashboard porque NO lo estamos usando aún y causaba el error
-import { Loader2, LogOut, User, Settings, ChevronDown } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Loader2, LogOut, User, Settings, ChevronDown, MessageCircle, CalendarDays } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { getGlobalUnreadCount } from '../services/messaging.service';
 
 export const Dashboard = () => {
   const { user, isAuthenticated, logout } = useAuth();
+  const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    let isMounted = true;
+    const fetchUnread = () => {
+      getGlobalUnreadCount()
+        .then((count) => { if (isMounted) setUnreadCount(count); })
+        .catch(() => {});
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => { isMounted = false; clearInterval(interval); };
+  }, [user]);
 
   if (!isAuthenticated || !user) {
     return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-blue-600"/></div>;
@@ -31,6 +47,28 @@ export const Dashboard = () => {
                 Aula<span className="text-blue-600">System</span>
               </span>
             </div>
+
+            {/* Mensajes + Calendario + Usuario */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => navigate('/messages')}
+                className="relative p-2 rounded-full hover:bg-gray-100 text-gray-500 hover:text-blue-600 transition-colors"
+                title="Mensajes"
+              >
+                <MessageCircle size={20} />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full h-4 min-w-4 px-1 flex items-center justify-center">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => navigate('/calendar')}
+                className="p-2 rounded-full hover:bg-gray-100 text-gray-500 hover:text-blue-600 transition-colors"
+                title="Calendario"
+              >
+                <CalendarDays size={20} />
+              </button>
 
             {/* Zona de Usuario */}
             <div className="relative ml-3">
@@ -75,6 +113,7 @@ export const Dashboard = () => {
                   </div>
                 </>
               )}
+            </div>
             </div>
           </div>
         </div>
