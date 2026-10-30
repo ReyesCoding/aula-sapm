@@ -216,6 +216,79 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
       return;
     }
 
+    // =========================================================
+    // 🏫 CASO 4: CENTRO
+    // =========================================================
+    // 🐛 FIX: antes no existía este caso ni el de PARENT, así que para esos
+    // dos roles la función llegaba al final sin llamar res.json/res.status
+    // ninguna vez — la petición se quedaba colgada para siempre y el
+    // dashboard de Centro/Padre nunca terminaba de cargar.
+    if (role === RoleName.CENTRO) {
+      const centerId = (req as any).user?.educationalCenterId as number | null;
+
+      const [usersCount, subjectsCount, assignmentsCount, pendingEnrollments] = await Promise.all([
+        prisma.user.count({ where: { educationalCenterId: centerId } }),
+        prisma.subject.count({ where: { educationalCenterId: centerId } }),
+        prisma.assignment.count({ where: { subject: { educationalCenterId: centerId } } }),
+        prisma.enrollment.count({ where: { status: EnrollmentStatus.PENDING, subject: { educationalCenterId: centerId } } }),
+      ]);
+
+      res.json({
+        stats: [
+          { label: 'Usuarios del Centro', value: usersCount, icon: 'users', color: 'blue' },
+          { label: 'Materias Activas', value: subjectsCount, icon: 'book', color: 'green' },
+          { label: 'Actividades', value: assignmentsCount, icon: 'file', color: 'purple' },
+          { label: 'Solicitudes Pendientes', value: pendingEnrollments, icon: 'alert', color: pendingEnrollments > 0 ? 'orange' : 'gray' },
+        ],
+      });
+      return;
+    }
+
+    // =========================================================
+    // 👪 CASO 5: PADRE/MADRE
+    // =========================================================
+    if (role === RoleName.PARENT) {
+      const links = await prisma.parentChild.findMany({ where: { parentId: userId }, select: { childId: true } });
+      const childIds = links.map((l) => l.childId);
+
+      if (childIds.length === 0) {
+        res.json({
+          stats: [
+            { label: 'Hijos Vinculados', value: 0, icon: 'users', color: 'gray' },
+            { label: 'Actividades Pendientes', value: 0, icon: 'clock', color: 'gray' },
+            { label: 'Promedio General', value: '-', icon: 'award', color: 'gray' },
+          ],
+          details: { children: [] },
+        });
+        return;
+      }
+
+      const [pendingCount, gradedAssignments, gradedExams] = await Promise.all([
+        prisma.assignment.count({ where: { studentId: { in: childIds }, status: { in: ['PENDING', 'LATE'] } } }),
+        prisma.assignment.findMany({
+          where: { studentId: { in: childIds }, status: 'GRADED', grade: { not: null } },
+          select: { grade: true },
+        }),
+        prisma.examSubmission.findMany({ where: { studentId: { in: childIds } }, select: { score: true } }),
+      ]);
+
+      const allGrades = [...gradedAssignments.map((a) => a.grade ?? 0), ...gradedExams.map((e) => e.score ?? 0)];
+      let averageDisplay = '-';
+      if (allGrades.length > 0) {
+        const sum = allGrades.reduce((a, b) => a + b, 0);
+        averageDisplay = (sum / allGrades.length).toFixed(1).replace(/\.0$/, '');
+      }
+
+      res.json({
+        stats: [
+          { label: 'Hijos Vinculados', value: childIds.length, icon: 'users', color: 'blue' },
+          { label: 'Actividades Pendientes', value: pendingCount, icon: 'clock', color: pendingCount > 0 ? 'orange' : 'green' },
+          { label: 'Promedio General', value: averageDisplay, icon: 'award', color: 'purple' },
+        ],
+      });
+      return;
+    }
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error obteniendo estadísticas' });

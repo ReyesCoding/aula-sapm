@@ -118,9 +118,14 @@ export const manageEnrollment = async (req: Request, res: Response): Promise<voi
 export const createSubject = async (req: Request, res: Response): Promise<void> => {
   try {
     const authReq = req as AuthRequest;
-    // @ts-ignore
-    const teacherId = req.user.userId;
-    const { name, code, description } = req.body;
+    const actor = authReq.user!;
+    const { name, code, description, teacherId: bodyTeacherId, educationalCenterId: bodyCenterId } = req.body as {
+      name?: string;
+      code?: string;
+      description?: string;
+      teacherId?: number;
+      educationalCenterId?: number;
+    };
 
     if (!name || !code) {
        res.status(400).json({ message: 'Nombre y Código son obligatorios' });
@@ -134,11 +139,46 @@ export const createSubject = async (req: Request, res: Response): Promise<void> 
         return;
     }
 
-    // v2.0: la materia hereda el centro del profesor que la crea
-    const educationalCenterId = authReq.user?.educationalCenterId ?? null;
-    if (educationalCenterId == null && authReq.user?.role !== 'ADMIN') {
-      res.status(403).json({ message: 'Tu usuario no tiene un centro educativo asignado' });
-      return;
+    // ¿Quién es el profesor titular?
+    // - TEACHER: siempre se asigna a sí mismo (no puede crear una materia para otro).
+    // - CENTRO/ADMIN: deben indicar teacherId, y ese usuario debe existir y ser TEACHER.
+    let teacherId: number;
+    if (actor.role === 'TEACHER') {
+      teacherId = actor.userId;
+    } else {
+      if (!bodyTeacherId) {
+        res.status(400).json({ message: 'Debes indicar el profesor titular (teacherId) de la materia' });
+        return;
+      }
+      const teacher = await prisma.user.findUnique({ where: { id: Number(bodyTeacherId) } });
+      if (!teacher || teacher.role !== 'TEACHER') {
+        res.status(400).json({ message: 'El teacherId indicado no corresponde a un profesor válido' });
+        return;
+      }
+      teacherId = teacher.id;
+    }
+
+    // v2.0: ¿a qué centro pertenece la materia?
+    // - TEACHER/CENTRO: heredan su propio centro (no pueden crear fuera de él).
+    // - ADMIN: no pertenece a ningún centro, así que debe indicarlo en el body.
+    let educationalCenterId: number | null;
+    if (actor.role === 'ADMIN') {
+      if (!bodyCenterId) {
+        res.status(400).json({ message: 'Como Admin debes indicar educationalCenterId para la materia' });
+        return;
+      }
+      const center = await prisma.educationalCenter.findUnique({ where: { id: Number(bodyCenterId) } });
+      if (!center) {
+        res.status(404).json({ message: 'El centro educativo indicado no existe' });
+        return;
+      }
+      educationalCenterId = center.id;
+    } else {
+      educationalCenterId = actor.educationalCenterId;
+      if (educationalCenterId == null) {
+        res.status(403).json({ message: 'Tu usuario no tiene un centro educativo asignado' });
+        return;
+      }
     }
 
     const newSubject = await prisma.subject.create({
@@ -148,7 +188,8 @@ export const createSubject = async (req: Request, res: Response): Promise<void> 
         description,
         teacherId,
         educationalCenterId
-      }
+      },
+      include: { teacher: { select: { id: true, name: true } } }
     });
 
     res.status(201).json(newSubject);

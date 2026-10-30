@@ -2,11 +2,13 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
-import { 
-  BookOpen, Users, FileText, CheckCircle, Clock, 
-  TrendingUp, AlertCircle, Award, BrainCircuit, 
-  ExternalLink, ArrowRight, X, Mail, PartyPopper 
+import {
+  BookOpen, Users, FileText, CheckCircle, Clock,
+  TrendingUp, AlertCircle, Award, BrainCircuit,
+  ExternalLink, ArrowRight, X, Mail, PartyPopper, Plus, KeyRound, Loader2, UserCheck, UserX
 } from 'lucide-react';
+import { CreateSubjectModal } from '../CreateSubjectModal';
+import { joinSubjectByCode, manageSubjectEnrollment } from '../../services/subject.service';
 
 // --------------------------------------------------------
 // 1. DEFINICIÓN DE INTERFACES
@@ -27,13 +29,20 @@ interface StudentItem { student: UserSummary; subject: SubjectSummary; }
 interface AssignmentTask { id: number; title: string; subject: SubjectSummary; student?: UserSummary; status?: string; grade?: number; }
 interface ExamItem { id: number; title: string; subject: SubjectSummary; _count?: { submissions: number }; }
 
+interface EnrollmentRequest {
+  id: number;
+  student: UserSummary;
+  subject: SubjectSummary;
+}
+
 interface DashboardDetails {
   uniqueStudents?: StudentItem[];
   assignmentsToGrade?: AssignmentTask[];
   activeExams?: ExamItem[];
   pendingAssignments?: AssignmentTask[];
   pendingExams?: ExamItem[];
-  completedAssignments?: AssignmentTask[]; 
+  completedAssignments?: AssignmentTask[];
+  pendingEnrollments?: EnrollmentRequest[];
 }
 
 interface DashboardData {
@@ -62,6 +71,13 @@ export function AcademicDashboard() {
   const [modalTitle, setModalTitle] = useState('');
   const [modalContent, setModalContent] = useState<React.ReactNode>(null);
 
+  const [isCreateSubjectOpen, setIsCreateSubjectOpen] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joinSuccess, setJoinSuccess] = useState<string | null>(null);
+  const [processingEnrollmentId, setProcessingEnrollmentId] = useState<number | null>(null);
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
@@ -83,6 +99,39 @@ export function AcademicDashboard() {
       setLoading(false);
     }
   }, [user]);
+
+  const handleJoinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!joinCode.trim()) return;
+    try {
+      setJoining(true);
+      setJoinError(null);
+      setJoinSuccess(null);
+      const result = await joinSubjectByCode(joinCode.trim().toUpperCase());
+      setJoinSuccess(result.message);
+      setJoinCode('');
+      fetchData();
+    } catch (err: unknown) {
+      const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
+      setJoinError(errorObj.response?.data?.message || errorObj.message || 'No se pudo procesar el código.');
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const handleEnrollmentDecision = async (enrollmentId: number, status: 'ACTIVE' | 'REJECTED') => {
+    try {
+      setProcessingEnrollmentId(enrollmentId);
+      await manageSubjectEnrollment(enrollmentId, status);
+      setIsModalOpen(false);
+      fetchData();
+    } catch (err) {
+      console.error('Error gestionando solicitud:', err);
+      alert('No se pudo procesar la solicitud.');
+    } finally {
+      setProcessingEnrollmentId(null);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -145,6 +194,45 @@ export function AcademicDashboard() {
                                     <p className="text-xs text-gray-500">{task.subject?.name} • Alumno: {task.student?.name || 'N/A'}</p>
                                 </div>
                                 <ArrowRight size={16} className="text-blue-600"/>
+                            </div>
+                        ))
+                    )}
+                </div>
+            );
+            setIsModalOpen(true);
+            break;
+
+        case 'teacher_requests':
+            setModalTitle('Solicitudes de Inscripción');
+            setModalContent(
+                <div className="space-y-3">
+                    {(!details.pendingEnrollments || details.pendingEnrollments.length === 0) ? (
+                        <p className="text-gray-500 italic">No hay solicitudes pendientes.</p>
+                    ) : (
+                        details.pendingEnrollments.map((req: EnrollmentRequest) => (
+                            <div key={req.id} className="p-3 border rounded-lg flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="font-bold text-gray-800 truncate">{req.student?.name || 'Estudiante'}</p>
+                                    <p className="text-xs text-gray-500 truncate">{req.student?.email} • {req.subject?.name}</p>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                        onClick={() => handleEnrollmentDecision(req.id, 'ACTIVE')}
+                                        disabled={processingEnrollmentId === req.id}
+                                        className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition disabled:opacity-50"
+                                        title="Aceptar"
+                                    >
+                                        {processingEnrollmentId === req.id ? <Loader2 size={16} className="animate-spin" /> : <UserCheck size={16} />}
+                                    </button>
+                                    <button
+                                        onClick={() => handleEnrollmentDecision(req.id, 'REJECTED')}
+                                        disabled={processingEnrollmentId === req.id}
+                                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition disabled:opacity-50"
+                                        title="Rechazar"
+                                    >
+                                        <UserX size={16} />
+                                    </button>
+                                </div>
                             </div>
                         ))
                     )}
@@ -315,11 +403,46 @@ export function AcademicDashboard() {
 
       {/* SECCIÓN MATERIAS */}
       <div id="courses-section">
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
             <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2"><BookOpen className="text-blue-600"/> Mis Materias</h2>
-            <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-bold border border-blue-100">{courses.length} Activas</span>
+            <div className="flex items-center gap-3">
+              <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-bold border border-blue-100">{courses.length} Activas</span>
+              {(user?.role === 'TEACHER' || user?.role === 'CENTRO') && (
+                <button
+                  onClick={() => setIsCreateSubjectOpen(true)}
+                  className="flex items-center gap-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition shadow-sm text-sm font-bold"
+                >
+                  <Plus size={16} /> Nueva Materia
+                </button>
+              )}
+            </div>
         </div>
-        
+
+        {user?.role === 'STUDENT' && (
+          <form onSubmit={handleJoinSubmit} className="mb-6 bg-white border border-gray-100 rounded-xl p-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="flex items-center gap-2 text-gray-500 shrink-0">
+              <KeyRound size={18} />
+              <span className="text-sm font-bold">Unirme con código</span>
+            </div>
+            <input
+              type="text"
+              value={joinCode}
+              onChange={(e) => setJoinCode(e.target.value)}
+              placeholder="Ej: MAT-2026-A"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm uppercase focus:ring-2 focus:ring-blue-600 focus:outline-none"
+            />
+            <button
+              type="submit"
+              disabled={joining || !joinCode.trim()}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {joining ? <Loader2 size={16} className="animate-spin" /> : null} Unirme
+            </button>
+            {joinError && <p className="text-xs text-red-600 font-medium sm:ml-2">{joinError}</p>}
+            {joinSuccess && <p className="text-xs text-green-600 font-medium sm:ml-2">{joinSuccess}</p>}
+          </form>
+        )}
+
         {courses.length === 0 ? (
              <div className="bg-white rounded-xl p-12 text-center border-2 border-dashed border-gray-200">
                  <BookOpen className="mx-auto h-12 w-12 text-gray-300 mb-4" />
@@ -350,6 +473,12 @@ export function AcademicDashboard() {
             </div>
         )}
       </div>
+
+      <CreateSubjectModal
+        isOpen={isCreateSubjectOpen}
+        onClose={() => setIsCreateSubjectOpen(false)}
+        onCreated={fetchData}
+      />
 
       {/* MODAL INTERACTIVO */}
       {isModalOpen && (
