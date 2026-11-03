@@ -15,10 +15,16 @@ import { RoleName } from '@prisma/client';
 
 const router = Router();
 
-// 1. RUTAS PÚBLICAS (Para cualquier usuario logueado: Admin, Teacher, Student)
+// 1. RUTAS PÚBLICAS (para cualquier usuario logueado)
 // Deben ir ANTES del bloqueo de Admin.
-router.get('/search', authenticateToken, searchUsers);
 router.patch('/profile', authenticateToken, updateProfile);
+
+// 🔒 Hallazgo nuevo (ver comentario en users.controller.ts::searchUsers):
+// antes CUALQUIER rol autenticado (incluyendo STUDENT/PARENT) podía llamar
+// esto sin ningún filtro de centro. Los únicos 2 usos reales en el frontend
+// son el selector de profesor al crear materia (TEACHER/CENTRO/ADMIN) y la
+// vinculación de hijos (ADMIN) — restringimos a esos roles.
+router.get('/search', authenticateToken, authorizeRoles([RoleName.TEACHER, RoleName.CENTRO, RoleName.ADMIN]), searchUsers);
 
 // 2. MIDDLEWARE DE SEGURIDAD (Muro de contención)
 // De aquí para abajo, SOLO pasan los ADMINS.

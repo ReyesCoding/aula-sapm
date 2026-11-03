@@ -42,8 +42,7 @@ const submitExamSchema = z.object({
 export const createExam = async (req: Request, res: Response): Promise<void> => {
   try {
     const authReq = req as AuthRequest;
-    // @ts-ignore
-    const teacherId = req.user.userId; 
+    const teacherId = authReq.user!.userId;
     const data = createExamSchema.parse(req.body);
 
     // v2.0: el examen debe pertenecer a una materia del propio profesor y de su centro
@@ -95,10 +94,9 @@ export const createExam = async (req: Request, res: Response): Promise<void> => 
 export const getExamsBySubject = async (req: Request, res: Response) => {
   try {
     const { subjectId } = req.params;
-    // @ts-ignore
-    const userId = req.user.userId;
-    // @ts-ignore
-    const role = req.user.role;
+    const authReq = req as AuthRequest;
+    const userId = authReq.user!.userId;
+    const role = authReq.user!.role;
 
     // v2.0: nadie puede consultar exámenes de una materia de otro centro
     const subjectForExamsList = await prisma.subject.findUnique({ where: { id: Number(subjectId) } });
@@ -163,10 +161,9 @@ export const getExamsBySubject = async (req: Request, res: Response) => {
 export const getExamById = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    // @ts-ignore
-    const userId = req.user.userId;
-    // @ts-ignore
-    const role = req.user.role as RoleName;
+    const authReq = req as AuthRequest;
+    const userId = authReq.user!.userId;
+    const role = authReq.user!.role;
 
     // Buscamos si ya entregó
     const existingSubmission = await prisma.examSubmission.findFirst({
@@ -230,8 +227,8 @@ export const getExamById = async (req: Request, res: Response): Promise<void> =>
 // 4. RESPONDER EXAMEN (Guarda Respuestas + Calcula Nota)
 export const submitExam = async (req: Request, res: Response): Promise<void> => {
   try {
-    // @ts-ignore
-    const studentId = req.user.userId;
+    const authReq = req as AuthRequest;
+    const studentId = authReq.user!.userId;
     const { examId, answers } = submitExamSchema.parse(req.body);
 
     const exam = await prisma.exam.findUnique({
@@ -240,14 +237,27 @@ export const submitExam = async (req: Request, res: Response): Promise<void> => 
         questions: { 
             include: { options: true } 
         },
-        subject: { select: { educationalCenterId: true } }
+        subject: { select: { id: true, educationalCenterId: true } }
       }
     });
 
     if (!exam) { res.status(404).json({ message: "Examen no encontrado" }); return; }
 
     // v2.0: no se puede responder un examen de otro centro
-    assertSameCenter(req as AuthRequest, exam.subject.educationalCenterId);
+    assertSameCenter(authReq, exam.subject.educationalCenterId);
+
+    // 🔒 Bug funcional 4.2: antes no se verificaba inscripción - un STUDENT
+    // podía responder exámenes de materias en las que nunca se inscribió,
+    // siempre que fueran de su mismo centro. La ruta ya restringe este
+    // endpoint a STUDENT (exam.routes.ts), así que aquí solo validamos
+    // inscripción ACTIVE.
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { studentId_subjectId: { studentId, subjectId: exam.subject.id } }
+    });
+    if (!enrollment) {
+      res.status(403).json({ message: 'No estás inscrito en la materia de este examen' });
+      return;
+    }
 
     const existing = await prisma.examSubmission.findFirst({
         where: { examId, studentId }
@@ -305,8 +315,8 @@ export const submitExam = async (req: Request, res: Response): Promise<void> => 
 export const getExamResults = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params; 
-    // @ts-ignore
-    const { userId, role } = req.user;
+    const authReq = req as AuthRequest;
+    const { userId, role } = authReq.user!;
 
     if (role !== 'TEACHER' && role !== 'ADMIN') {
        res.status(403).json({ message: "No tienes permiso" });
@@ -326,7 +336,7 @@ export const getExamResults = async (req: Request, res: Response): Promise<void>
       res.status(403).json({ message: 'No eres el profesor de este examen' });
       return;
     }
-    assertSameCenter(req as AuthRequest, examForResults.subject.educationalCenterId);
+    assertSameCenter(authReq, examForResults.subject.educationalCenterId);
 
     const submissions = await prisma.examSubmission.findMany({
       where: { examId: Number(id) },
@@ -354,8 +364,8 @@ export const getExamResults = async (req: Request, res: Response): Promise<void>
 export const toggleExamResults = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    // @ts-ignore
-    const { userId, role } = req.user;
+    const authReq = req as AuthRequest;
+    const { userId, role } = authReq.user!;
 
     if (role !== 'TEACHER' && role !== 'ADMIN') {
         res.status(403).json({ message: "No autorizado" });
@@ -373,7 +383,7 @@ export const toggleExamResults = async (req: Request, res: Response): Promise<vo
       res.status(403).json({ message: 'No eres el profesor de este examen' });
       return;
     }
-    assertSameCenter(req as AuthRequest, exam.subject.educationalCenterId);
+    assertSameCenter(authReq, exam.subject.educationalCenterId);
 
     const updated = await prisma.exam.update({
         where: { id: Number(id) },

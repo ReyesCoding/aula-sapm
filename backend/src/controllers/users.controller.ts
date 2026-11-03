@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import prisma from '../prisma/client';
 import { RoleName } from '@prisma/client';
 import bcrypt from 'bcryptjs'; // 👈 IMPORTANTE: Asegúrate de tener esto instalado
+import { AuthRequest } from '../middlewares/auth.middleware';
+import { centerWhere } from '../utils/tenant';
 
 // --- 1. LISTAR TODOS (Para el Panel de Gestión Admin) ---
 export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
@@ -20,7 +22,7 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
     res.json(users);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Error listando usuarios' });
+    res.status(500).json({ message: 'Error listando usuarios' });
   }
 };
 
@@ -75,7 +77,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     res.status(201).json(userWithoutPassword);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Error creando usuario' });
+    res.status(500).json({ message: 'Error creando usuario' });
   }
 };
 
@@ -83,7 +85,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 export const deleteUser = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const currentUserId = (req as any).user.userId; // Obtenemos quién está haciendo la petición
+    const currentUserId = (req as AuthRequest).user!.userId; // Obtenemos quién está haciendo la petición
 
     // 🛡️ LÓGICA DE PROTECCIÓN
     if (Number(id) === currentUserId) {
@@ -108,15 +110,26 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
         res.status(400).json({ message: 'No se puede eliminar: El usuario tiene datos asociados (Cursos, Tareas, etc.). Desactívalo en su lugar.' });
         return;
     }
-    res.status(500).json({ error: 'Error eliminando usuario' });
+    res.status(500).json({ message: 'Error eliminando usuario' });
   }
 };
 
 // --- 4. BUSCADOR (Para asignar en cursos - MANTENIDO DE TU CÓDIGO) ---
+// 🔒 Hallazgo nuevo (encontrado en esta pasada, fuera del informe original):
+// este endpoint no tenía NINGÚN filtro de centro — cualquier usuario
+// autenticado (incluyendo STUDENT/PARENT, que nunca llaman a esto desde la
+// UI, pero sí pueden llamarlo directo a la API) podía enumerar nombre y
+// email de usuarios de CUALQUIER centro educativo. Se usa solo en 2 lugares
+// del frontend: el selector de profesor al crear una materia
+// (CreateSubjectModal, para TEACHER/CENTRO/ADMIN) y la vinculación de hijos
+// (LinkChildModal, solo ADMIN). Restringimos la ruta a esos roles
+// (users.routes.ts) y aplicamos el mismo `centerWhere` que ya usa
+// admin.controller.ts::adminSearch para el mismo tipo de búsqueda.
 export const searchUsers = async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthRequest;
     const { role, query } = req.query;
-    const whereCondition: any = { isActive: true };
+    const whereCondition: any = { isActive: true, ...centerWhere(authReq) };
 
     if (role) whereCondition.role = role as RoleName;
     if (query) {
@@ -134,7 +147,7 @@ export const searchUsers = async (req: Request, res: Response): Promise<void> =>
     res.json(users);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Error buscando usuarios' });
+    res.status(500).json({ message: 'Error buscando usuarios' });
   }
 };
 
@@ -171,7 +184,7 @@ export const linkParentChild = async (req: Request, res: Response): Promise<void
       return;
     }
     console.error(error);
-    res.status(500).json({ error: 'Error vinculando hijo' });
+    res.status(500).json({ message: 'Error vinculando hijo' });
   }
 };
 
@@ -185,7 +198,7 @@ export const unlinkParentChild = async (req: Request, res: Response): Promise<vo
     res.json({ message: 'Hijo desvinculado' });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Error desvinculando hijo' });
+    res.status(500).json({ message: 'Error desvinculando hijo' });
   }
 };
 
@@ -200,7 +213,7 @@ export const getParentChildren = async (req: Request, res: Response): Promise<vo
     res.json(links.map((l) => l.child));
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Error listando hijos' });
+    res.status(500).json({ message: 'Error listando hijos' });
   }
 };
 
@@ -218,13 +231,13 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
     res.json({ message: 'Rol actualizado', user: updatedUser });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Error actualizando rol' });
+    res.status(500).json({ message: 'Error actualizando rol' });
   }
 };
 
 export const updateProfile = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = (req as any).user?.userId;
+    const userId = (req as AuthRequest).user?.userId;
     const { name, currentPassword, newPassword } = req.body;
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -271,7 +284,7 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
     res.json(updatedUser);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Error al actualizar el perfil' });
+    res.status(500).json({ message: 'Error al actualizar el perfil' });
   }
 };
 

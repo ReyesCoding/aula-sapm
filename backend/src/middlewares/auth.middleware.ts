@@ -21,7 +21,15 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
     return res.status(401).json({ message: 'Acceso denegado: Token no proporcionado' });
   }
 
-  const secret = process.env.JWT_SECRET || 'secret_super_seguro';
+  // Fail-closed: si JWT_SECRET no está configurado, NUNCA debemos caer a un
+  // secreto hardcodeado conocido (eso permitiría a cualquiera firmar tokens
+  // válidos). Mismo criterio que auth.controller.ts::login.
+  if (!process.env.JWT_SECRET) {
+    console.error('CRITICAL: JWT_SECRET no está definido en las variables de entorno.');
+    return res.status(500).json({ message: 'Error de configuración del servidor' });
+  }
+
+  const secret = process.env.JWT_SECRET;
 
   jwt.verify(token, secret, (err: any, decoded: any) => {
     if (err) {

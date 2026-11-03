@@ -1,36 +1,40 @@
 import { Request, Response } from 'express';
-import { PrismaClient, RoleName } from '@prisma/client';
+import { RoleName } from '@prisma/client';
 import PDFDocument from 'pdfkit';
 import { AuthRequest } from '../middlewares/auth.middleware';
-
-const prisma = new PrismaClient();
+// Bug funcional 4.3 (antes corregido): este archivo instanciaba su PROPIO
+// PrismaClient en lugar de usar el singleton compartido — con Neon Postgres
+// cada instancia abre su propio pool de conexiones, y varias instancias
+// vivas a la vez agotan el límite de conexiones del plan. Un solo
+// PrismaClient por proceso, siempre.
+import prisma from '../prisma/client';
+import { assertCanViewStudentGrades } from '../services/grades.policy';
+import { HttpError } from '../utils/tenant';
 
 // Nota: la firma se tipa como (req: Request, ...) y se castea adentro a
 // AuthRequest — declarar el parámetro ya como AuthRequest rompe la
 // asignación a RequestHandler de Express (contravarianza de tipos).
 export const generateStudentReport = async (req: Request, res: Response): Promise<any> => {
   try {
-    const { userId, role } = (req as AuthRequest).user!;
-    let targetStudentId = userId;
+    const { userId, role, educationalCenterId } = (req as AuthRequest).user!;
 
-    // Lógica de seguridad: ¿De quién es el reporte?
-    if (role === RoleName.PARENT) {
-      // El padre pide el reporte de un hijo específico (lo manda por query param ?studentId=7)
-      const requestedChildId = Number(req.query.studentId);
+    // 🔒 Hallazgo crítico 3.4 (antes corregido): el caso TEACHER confiaba
+    // ciegamente en ?studentId sin verificar que el alumno solicitado
+    // perteneciera a alguna de sus materias (IDOR — cualquier profesor podía
+    // descargar el reporte de CUALQUIER estudiante del sistema). Además
+    // CENTRO no tenía ningún caso (quedaba pidiendo su propio reporte, sin
+    // sentido para ese rol). En vez de reimplementar estas reglas aquí,
+    // reusamos la misma política ya centralizada en grades.policy.ts que usa
+    // el módulo de Calificaciones — una sola fuente de verdad para "quién
+    // puede ver las notas de quién".
+    const targetStudentId = role === RoleName.STUDENT ? userId : Number(req.query.studentId);
 
-      // Verificar que sea SU hijo
-      const relation = await prisma.parentChild.findUnique({
-        where: { parentId_childId: { parentId: userId, childId: requestedChildId } }
-      });
-
-      if (!relation) return res.status(403).json({ message: 'No tienes permiso para ver este reporte' });
-      targetStudentId = requestedChildId;
+    if (role !== RoleName.STUDENT && (!req.query.studentId || Number.isNaN(targetStudentId))) {
+      res.status(400).json({ message: 'Debes indicar el studentId del reporte a generar' });
+      return;
     }
-    // Si es Student, targetStudentId ya es su propio ID.
-    // Si es Teacher/Admin, podrían pedir cualquiera (simplifiquemos: Teacher pide por query)
-    else if (role === RoleName.TEACHER) {
-        targetStudentId = Number(req.query.studentId);
-    }
+
+    await assertCanViewStudentGrades({ userId, role, educationalCenterId }, targetStudentId);
 
     // 1. Obtener datos
     const student = await prisma.user.findUnique({ where: { id: targetStudentId } });
@@ -82,6 +86,10 @@ export const generateStudentReport = async (req: Request, res: Response): Promis
     doc.end();
 
   } catch (error) {
+    if (error instanceof HttpError && !res.headersSent) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
     console.error(error);
     // Si ya empezamos a enviar el PDF, no podemos enviar JSON.
     if (!res.headersSent) {
