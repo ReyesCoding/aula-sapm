@@ -15,8 +15,7 @@ import {
 } from '../controllers/assignment.controller';
 
 // Middlewares
-import { authenticateToken } from '../middlewares/auth.middleware';
-import { authorizeRoles } from '../middlewares/role.middleware';
+import { authenticateToken, authorizeRoles } from '../middlewares/auth.middleware';
 import { upload } from '../middlewares/upload.middleware';
 
 const router = Router();

@@ -10,7 +10,6 @@ import authRoutes from './routes/auth.routes';
 import assignmentRoutes from './routes/assignment.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import reportRoutes from './routes/report.routes';
-import courseRoutes from './routes/course.routes';
 import userRoutes from './routes/users.routes';
 import subjectRoutes from './routes/subject.routes';
 import examRoutes from './routes/exam.routes';
@@ -62,7 +61,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/assignments', assignmentRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportRoutes);
-app.use('/api/courses', courseRoutes);
+// Nota: el módulo Course quedó deprecado en Fase 1 (migración a Subject);
+// course.controller.ts/course.routes.ts (que solo devolvían 501) y su mount
+// aquí fueron eliminados como código muerto (ver CODE_REVIEW.md 5.x).
 app.use('/api/users', userRoutes);
 app.use('/api/subjects', subjectRoutes);
 
