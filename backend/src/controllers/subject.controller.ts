@@ -39,7 +39,8 @@ export const getAllSubjects = async (req: Request, res: Response) => {
 // 👇 Unirse a una materia mediante Código
 export const joinSubject = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = (req as any).user?.userId;
+    const authReq = req as AuthRequest;
+    const userId = authReq.user!.userId;
     const { code } = req.body;
 
     if (!code) { res.status(400).json({ message: 'Código requerido.' }); return; }
@@ -80,8 +81,7 @@ export const joinSubject = async (req: Request, res: Response): Promise<void> =>
 // 👇 NUEVA FUNCIÓN: APROBAR/RECHAZAR ALUMNOS (Para el Profesor)
 export const manageEnrollment = async (req: Request, res: Response): Promise<void> => {
     try {
-        // @ts-ignore
-        const teacherId = req.user.userId;
+        const teacherId = (req as AuthRequest).user!.userId;
         const { enrollmentId, status } = req.body; // status: 'ACTIVE' o 'REJECTED'
 
         // 1. Validar que la materia pertenezca a este profesor

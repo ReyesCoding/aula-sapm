@@ -9,46 +9,24 @@ import {
 } from 'lucide-react';
 import { CreateSubjectModal } from '../CreateSubjectModal';
 import { joinSubjectByCode, manageSubjectEnrollment } from '../../services/subject.service';
+import { getDashboardStats } from '../../services/dashboard.service';
+// 6.4 (antes corregido): este archivo declaraba su PROPIA copia local de
+// StatItem/DashboardDetails/etc. (con 2 campos extra: type/subtext) en vez
+// de reusar/extender los tipos ya centralizados en types/dashboard.types.ts
+// que usan StatsGrid.tsx y AdminDashboard.tsx. Dos fuentes de verdad
+// divergentes para la misma respuesta de API. Ahora una sola.
+import type {
+  StatItem,
+  StudentItem,
+  AssignmentTask,
+  ExamItem,
+  EnrollmentRequest,
+  DashboardStats as DashboardData,
+} from '../../types/dashboard.types';
 
 // --------------------------------------------------------
-// 1. DEFINICIÓN DE INTERFACES
+// 1. DEFINICIÓN DE INTERFACES (solo las específicas de esta pantalla)
 // --------------------------------------------------------
-
-interface StatItem {
-  label: string;
-  value: string | number;
-  icon: string;
-  color: string;
-  type?: string;
-  subtext?: string;
-}
-
-interface UserSummary { id: number; name: string; email?: string; }
-interface SubjectSummary { id: number; name: string; }
-interface StudentItem { student: UserSummary; subject: SubjectSummary; }
-interface AssignmentTask { id: number; title: string; subject: SubjectSummary; student?: UserSummary; status?: string; grade?: number; }
-interface ExamItem { id: number; title: string; subject: SubjectSummary; _count?: { submissions: number }; }
-
-interface EnrollmentRequest {
-  id: number;
-  student: UserSummary;
-  subject: SubjectSummary;
-}
-
-interface DashboardDetails {
-  uniqueStudents?: StudentItem[];
-  assignmentsToGrade?: AssignmentTask[];
-  activeExams?: ExamItem[];
-  pendingAssignments?: AssignmentTask[];
-  pendingExams?: ExamItem[];
-  completedAssignments?: AssignmentTask[];
-  pendingEnrollments?: EnrollmentRequest[];
-}
-
-interface DashboardData {
-  stats: StatItem[];
-  details: DashboardDetails;
-}
 
 interface Subject {
   id: number;
@@ -77,12 +55,14 @@ export function AcademicDashboard() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joinSuccess, setJoinSuccess] = useState<string | null>(null);
   const [processingEnrollmentId, setProcessingEnrollmentId] = useState<number | null>(null);
+  // 6.6: antes el error al aceptar/rechazar una solicitud se mostraba con alert()
+  const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const statsRes = await api.get('/dashboard/stats');
-      setData(statsRes.data);
+      const statsRes = await getDashboardStats();
+      setData(statsRes);
 
       const subjectsRes = await api.get('/subjects');
       let mySubjects: Subject[] = subjectsRes.data;
@@ -120,6 +100,7 @@ export function AcademicDashboard() {
   };
 
   const handleEnrollmentDecision = async (enrollmentId: number, status: 'ACTIVE' | 'REJECTED') => {
+    setEnrollmentError(null);
     try {
       setProcessingEnrollmentId(enrollmentId);
       await manageSubjectEnrollment(enrollmentId, status);
@@ -127,7 +108,8 @@ export function AcademicDashboard() {
       fetchData();
     } catch (err) {
       console.error('Error gestionando solicitud:', err);
-      alert('No se pudo procesar la solicitud.');
+      const errorObj = err as { response?: { data?: { message?: string } } };
+      setEnrollmentError(errorObj.response?.data?.message || 'No se pudo procesar la solicitud.');
     } finally {
       setProcessingEnrollmentId(null);
     }
@@ -491,6 +473,9 @@ export function AcademicDashboard() {
                     </button>
                 </div>
                 <div className="p-4 max-h-[60vh] overflow-y-auto">
+                    {enrollmentError && (
+                        <div className="mb-3 bg-red-50 text-red-600 p-3 rounded-lg text-sm font-bold border border-red-100">{enrollmentError}</div>
+                    )}
                     {modalContent}
                 </div>
                 <div className="p-3 bg-gray-50 text-center">

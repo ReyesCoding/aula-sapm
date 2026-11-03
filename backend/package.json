@@ -14,7 +14,6 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
-    "@types/bcrypt": "^6.0.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.19",
     "@types/date-fns": "^2.5.3",
@@ -33,7 +32,6 @@
   "dependencies": {
     "@prisma/client": "^6.19.1",
     "@types/multer": "^2.0.0",
-    "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",

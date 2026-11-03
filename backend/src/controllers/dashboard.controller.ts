@@ -1,11 +1,13 @@
 import { Request, Response } from 'express';
 import prisma from '../prisma/client';
 import { RoleName, EnrollmentStatus } from '@prisma/client';
+import { AuthRequest } from '../middlewares/auth.middleware';
 
 export const getDashboardStats = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = (req as any).user?.userId;
-    const role = (req as any).user?.role as RoleName;
+    const authReq = req as AuthRequest;
+    const userId = authReq.user!.userId;
+    const role = authReq.user!.role;
     const now = new Date();
 
     // =========================================================
@@ -224,7 +226,7 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
     // ninguna vez — la petición se quedaba colgada para siempre y el
     // dashboard de Centro/Padre nunca terminaba de cargar.
     if (role === RoleName.CENTRO) {
-      const centerId = (req as any).user?.educationalCenterId as number | null;
+      const centerId = authReq.user!.educationalCenterId;
 
       const [usersCount, subjectsCount, assignmentsCount, pendingEnrollments] = await Promise.all([
         prisma.user.count({ where: { educationalCenterId: centerId } }),
@@ -291,6 +293,6 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Error obteniendo estadísticas' });
+    res.status(500).json({ message: 'Error obteniendo estadísticas' });
   }
 };
