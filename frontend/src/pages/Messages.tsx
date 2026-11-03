@@ -34,6 +34,8 @@ export default function Messages() {
   const [draft, setDraft] = useState('');
   const [draftFile, setDraftFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
+  // 6.6: antes el error al enviar se mostraba con alert()
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -75,6 +77,7 @@ export default function Messages() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedId || (!draft.trim() && !draftFile)) return;
+    setSendError(null);
     try {
       setSending(true);
       await sendMessage(selectedId, draft.trim(), draftFile);
@@ -82,8 +85,9 @@ export default function Messages() {
       setDraftFile(null);
       await openConversation(selectedId);
       await loadConversations();
-    } catch {
-      alert('Error al enviar el mensaje.');
+    } catch (error) {
+      const errorObj = error as { response?: { data?: { message?: string } } };
+      setSendError(errorObj.response?.data?.message || 'Error al enviar el mensaje.');
     } finally {
       setSending(false);
     }
@@ -197,6 +201,9 @@ export default function Messages() {
                 </div>
 
                 <form onSubmit={handleSend} className="p-4 border-t border-gray-100 bg-white">
+                  {sendError && (
+                    <div className="mb-2 bg-red-50 text-red-600 p-2 rounded-lg text-xs font-bold border border-red-100">{sendError}</div>
+                  )}
                   {draftFile && (
                     <div className="mb-2 flex items-center gap-2 text-xs bg-violet-50 text-violet-700 px-3 py-1.5 rounded-lg w-fit">
                       <Paperclip size={12} /> {draftFile.name}

@@ -85,6 +85,8 @@ export default function SubjectDetail() {
   const [assignments, setAssignments] = useState<AssignmentSummary[]>([]);
   const [exams, setExams] = useState<ExamSummary[]>([]);
   const [subjectName, setSubjectName] = useState("Cargando materia...");
+  // 6.6: antes el error al cambiar visibilidad de resultados se mostraba con alert()
+  const [examActionError, setExamActionError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -134,11 +136,13 @@ export default function SubjectDetail() {
   }, [location, user?.role]);
 
   const handleToggleVisibility = async (examId: number) => {
+    setExamActionError(null);
     try {
         await toggleExamResults(examId);
         setExams(prev => prev.map(e => e.id === examId ? { ...e, showResults: !e.showResults } : e));
-    } catch {
-        alert("Error al cambiar la visibilidad");
+    } catch (error) {
+        const errorObj = error as { response?: { data?: { message?: string } } };
+        setExamActionError(errorObj.response?.data?.message || "Error al cambiar la visibilidad");
     }
   };
 
@@ -151,6 +155,10 @@ export default function SubjectDetail() {
         <button onClick={() => navigate('/dashboard')} className="flex items-center text-gray-500 hover:text-blue-600 mb-6 transition">
           <ArrowLeft size={20} className="mr-2"/> Volver al Dashboard
         </button>
+
+        {examActionError && (
+          <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg text-sm font-bold border border-red-100">{examActionError}</div>
+        )}
 
         <div className="flex justify-between items-center mb-8">
           <div>

@@ -47,6 +47,8 @@ export const TakeExamModal = ({
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [result, setResult] = useState<{ score: number } | null>(null);
+  // 6.6: antes el error al enviar el examen se mostraba con alert()
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const loadExam = useCallback(async () => {
     setLoading(true);
@@ -77,6 +79,7 @@ export const TakeExamModal = ({
     }
 
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const formattedAnswers = Object.entries(answers).map(([qId, oId]) => ({
         questionId: Number(qId),
@@ -92,7 +95,8 @@ export const TakeExamModal = ({
       
     } catch (error) {
       console.error(error);
-      alert("Error enviando el examen.");
+      const errorObj = error as { response?: { data?: { message?: string } } };
+      setSubmitError(errorObj.response?.data?.message || "Error enviando el examen.");
     } finally {
       setSubmitting(false);
     }
@@ -157,7 +161,11 @@ export const TakeExamModal = ({
 
         {/* BODY */}
         <div className="p-6 overflow-y-auto flex-1 bg-gray-50/30">
-          
+
+          {submitError && (
+            <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg text-sm font-bold border border-red-100">{submitError}</div>
+          )}
+
           {loading ? (
             <div className="flex justify-center py-20"><Loader2 className="animate-spin text-blue-600" size={40}/></div>
           ) : result ? (

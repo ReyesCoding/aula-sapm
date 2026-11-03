@@ -35,6 +35,8 @@ export const GradesPanel = ({ subjectId }: GradesPanelProps) => {
 
   // Vista alumno
   const [myAverage, setMyAverage] = useState<SubjectAverageResult | null>(null);
+  // 6.6: antes el error al eliminar se mostraba con alert()
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadTeacherView = useCallback(async () => {
     const [studentsData, evaluationsData] = await Promise.all([
@@ -71,11 +73,14 @@ export const GradesPanel = ({ subjectId }: GradesPanelProps) => {
 
   const handleDelete = async (id: number) => {
     if (!confirm('¿Eliminar esta calificación?')) return;
+    setDeleteError(null);
     try {
       await deleteEvaluation(id);
       loadData();
-    } catch {
-      alert('Error al eliminar la calificación.');
+    } catch (error) {
+      console.error('Error eliminando calificación:', error);
+      const errorObj = error as { response?: { data?: { message?: string } } };
+      setDeleteError(errorObj.response?.data?.message || 'Error al eliminar la calificación.');
     }
   };
 
@@ -141,6 +146,9 @@ export const GradesPanel = ({ subjectId }: GradesPanelProps) => {
 
   return (
     <div className="space-y-4">
+      {deleteError && (
+        <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm font-bold border border-red-100">{deleteError}</div>
+      )}
       <div className="flex justify-end">
         <button
           onClick={() => setIsModalOpen(true)}

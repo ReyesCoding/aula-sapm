@@ -23,6 +23,8 @@ export const ThreadDetailModal = ({ isOpen, onClose, threadId, onThreadUpdated }
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+  // 6.6: antes estos 4 errores se mostraban con alert()
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!threadId) return;
@@ -44,13 +46,15 @@ export const ThreadDetailModal = ({ isOpen, onClose, threadId, onThreadUpdated }
   const handleReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!threadId || !reply.trim()) return;
+    setActionError(null);
     try {
       setSending(true);
       await createPost(threadId, reply.trim());
       setReply('');
       await load();
-    } catch {
-      alert('Error al enviar la respuesta.');
+    } catch (error) {
+      const errorObj = error as { response?: { data?: { message?: string } } };
+      setActionError(errorObj.response?.data?.message || 'Error al enviar la respuesta.');
     } finally {
       setSending(false);
     }
@@ -58,33 +62,39 @@ export const ThreadDetailModal = ({ isOpen, onClose, threadId, onThreadUpdated }
 
   const handleDeletePost = async (postId: number) => {
     if (!confirm('¿Eliminar este mensaje?')) return;
+    setActionError(null);
     try {
       await deletePost(postId);
       await load();
-    } catch {
-      alert('Error al eliminar el mensaje.');
+    } catch (error) {
+      const errorObj = error as { response?: { data?: { message?: string } } };
+      setActionError(errorObj.response?.data?.message || 'Error al eliminar el mensaje.');
     }
   };
 
   const handleToggleLock = async () => {
     if (!detail) return;
+    setActionError(null);
     try {
       await setThreadLock(detail.thread.id, !detail.thread.isLocked);
       await load();
       onThreadUpdated();
-    } catch {
-      alert('Error al cambiar el estado del tema.');
+    } catch (error) {
+      const errorObj = error as { response?: { data?: { message?: string } } };
+      setActionError(errorObj.response?.data?.message || 'Error al cambiar el estado del tema.');
     }
   };
 
   const handleTogglePin = async () => {
     if (!detail) return;
+    setActionError(null);
     try {
       await setThreadPin(detail.thread.id, !detail.thread.isPinned);
       await load();
       onThreadUpdated();
-    } catch {
-      alert('Error al fijar/desfijar el tema.');
+    } catch (error) {
+      const errorObj = error as { response?: { data?: { message?: string } } };
+      setActionError(errorObj.response?.data?.message || 'Error al fijar/desfijar el tema.');
     }
   };
 
@@ -123,6 +133,9 @@ export const ThreadDetailModal = ({ isOpen, onClose, threadId, onThreadUpdated }
         </div>
 
         <div className="p-6 overflow-y-auto flex-1 bg-gray-50/50 space-y-4">
+          {actionError && (
+            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm font-bold border border-red-100">{actionError}</div>
+          )}
           {loading ? (
             <div className="text-center py-10"><Loader2 className="animate-spin text-indigo-600 mx-auto" /></div>
           ) : detail ? (

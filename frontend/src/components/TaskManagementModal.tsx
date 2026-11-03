@@ -37,9 +37,16 @@ export const TaskManagementModal = ({ isOpen, onClose, assignmentId, onTaskUpdat
   const [details, setDetails] = useState<AssignmentDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [grades, setGrades] = useState<Record<number, number>>({});
-  
+  // 6.3: antes el feedback se guardaba siempre como el texto fijo "Calificado.",
+  // sin dar al profesor forma de escribir una devolución real al estudiante.
+  const [feedbacks, setFeedbacks] = useState<Record<number, string>>({});
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [gradeError, setGradeError] = useState<string | null>(null);
+  const [gradeSuccessId, setGradeSuccessId] = useState<number | null>(null);
+
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadDetails = useCallback(async () => {
     if (!assignmentId) return;
@@ -51,12 +58,15 @@ export const TaskManagementModal = ({ isOpen, onClose, assignmentId, onTaskUpdat
       const resSubs = await api.get(`/assignments/${assignmentId}/submissions`);
       setSubmissions(resSubs.data);
       
-      // Inicializar notas locales para edición
+      // Inicializar notas y feedback locales para edición
       const initialGrades: Record<number, number> = {};
+      const initialFeedbacks: Record<number, string> = {};
       resSubs.data.forEach((sub: Submission) => {
           if (sub.grade !== null) initialGrades[sub.id] = sub.grade;
+          initialFeedbacks[sub.id] = sub.feedback ?? '';
       });
       setGrades(initialGrades);
+      setFeedbacks(initialFeedbacks);
 
     } catch (error) {
       console.error("Error cargando tarea", error);
@@ -82,13 +92,15 @@ export const TaskManagementModal = ({ isOpen, onClose, assignmentId, onTaskUpdat
   const confirmDelete = async () => {
     if (!assignmentId) return;
     setIsDeleting(true);
+    setDeleteError(null);
     try {
         await deleteAssignment(assignmentId);
         onTaskUpdated();
         onClose();
     } catch (error) {
         console.error(error);
-        alert("Error al eliminar");
+        const errorObj = error as { response?: { data?: { message?: string } } };
+        setDeleteError(errorObj.response?.data?.message || 'No se pudo eliminar la tarea.');
     } finally {
         setIsDeleting(false);
     }
@@ -98,13 +110,20 @@ export const TaskManagementModal = ({ isOpen, onClose, assignmentId, onTaskUpdat
     const grade = grades[submissionId];
     if (grade === undefined) return;
 
+    setSavingId(submissionId);
+    setGradeError(null);
+    setGradeSuccessId(null);
     try {
-        await api.patch(`/assignments/${submissionId}/grade`, { grade, feedback: "Calificado." });
-        alert("Calificado correctamente");
+        const feedback = feedbacks[submissionId] ?? '';
+        await api.patch(`/assignments/${submissionId}/grade`, { grade, feedback });
+        setGradeSuccessId(submissionId);
         loadDetails();
     } catch (error) {
         console.error(error);
-        alert("Error guardando nota");
+        const errorObj = error as { response?: { data?: { message?: string } } };
+        setGradeError(errorObj.response?.data?.message || 'No se pudo guardar la calificación.');
+    } finally {
+        setSavingId(null);
     }
   };
 
@@ -162,6 +181,12 @@ export const TaskManagementModal = ({ isOpen, onClose, assignmentId, onTaskUpdat
                         <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2 pb-2 border-b border-gray-200">
                             <User size={18}/> Entregas de Estudiantes ({submissions.length})
                         </h3>
+
+                        {gradeError && (
+                            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
+                                {gradeError}
+                            </div>
+                        )}
                         
                         {submissions.length === 0 ? (
                             <div className="text-center py-10 bg-white rounded-lg border border-dashed border-gray-300">
@@ -210,11 +235,27 @@ export const TaskManagementModal = ({ isOpen, onClose, assignmentId, onTaskUpdat
                                                     <span className="text-gray-400 text-sm font-medium">/ 100</span>
                                                     <button 
                                                         onClick={() => handleGrade(sub.id)}
-                                                        className="ml-2 bg-green-600 text-white p-2 rounded-lg hover:bg-green-700 transition shadow-sm" title="Guardar Nota">
-                                                        <Save size={18} />
+                                                        disabled={savingId === sub.id}
+                                                        className="ml-2 bg-green-600 text-white p-2 rounded-lg hover:bg-green-700 transition shadow-sm disabled:opacity-60" title="Guardar Nota">
+                                                        {savingId === sub.id ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                                                     </button>
                                                 </div>
                                             </div>
+                                        </div>
+
+                                        {/* 6.3: textarea real de feedback (antes se guardaba siempre "Calificado.") */}
+                                        <div className="mt-4">
+                                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Feedback para el estudiante</label>
+                                            <textarea
+                                                value={feedbacks[sub.id] ?? ''}
+                                                onChange={(e) => setFeedbacks({ ...feedbacks, [sub.id]: e.target.value })}
+                                                placeholder="Escribe una devolución para el estudiante (opcional)..."
+                                                className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                                                rows={2}
+                                            />
+                                            {gradeSuccessId === sub.id && (
+                                                <p className="text-xs text-green-600 mt-1">Calificación y feedback guardados.</p>
+                                            )}
                                         </div>
 
                                         {/* 👇 SECCIÓN DE COMENTARIOS (NUEVO) */}
@@ -252,6 +293,9 @@ export const TaskManagementModal = ({ isOpen, onClose, assignmentId, onTaskUpdat
                   <div>
                       <h3 className="text-lg font-bold text-gray-900">¿Eliminar Tarea?</h3>
                       <p className="text-sm text-gray-500 mt-1">Esta acción es irreversible y borrará todas las entregas asociadas.</p>
+                      {deleteError && (
+                          <p className="text-sm text-red-600 mt-2 bg-red-50 border border-red-200 rounded-lg p-2">{deleteError}</p>
+                      )}
                   </div>
                   <div className="flex gap-3 w-full mt-2">
                       <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-2 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition">

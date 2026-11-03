@@ -31,6 +31,10 @@ const emptyQuestion: QuestionState = {
 
 export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props) => {
   const [loading, setLoading] = useState(false);
+  // 6.6: antes los errores de validación/creación se mostraban con alert(),
+  // inconsistente con el resto de modales (CreateSubjectModal, EventModal, ...)
+  // que usan un bloque de error inline.
+  const [error, setError] = useState<string | null>(null);
   
   // Estados del Formulario
   const [title, setTitle] = useState("");
@@ -91,10 +95,11 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
   // --- ENVIAR AL BACKEND ---
 
   const handleSubmit = async () => {
-    if (!title) return alert("El título es obligatorio");
-    
+    setError(null);
+    if (!title) { setError("El título es obligatorio"); return; }
+
     const isValid = questions.every(q => q.text.trim() !== "" && q.options.every(o => o.text.trim() !== ""));
-    if (!isValid) return alert("Por favor completa todos los campos de texto de las preguntas y opciones.");
+    if (!isValid) { setError("Por favor completa todos los campos de texto de las preguntas y opciones."); return; }
 
     setLoading(true);
     try {
@@ -119,9 +124,10 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
       setDueDate("");
       setShowResults(false);
       setQuestions([{ ...emptyQuestion }]);
-    } catch (error) {
-      console.error(error);
-      alert("Error creando el examen");
+    } catch (err) {
+      console.error(err);
+      const errorObj = err as { response?: { data?: { message?: string } } };
+      setError(errorObj.response?.data?.message || "Error creando el examen");
     } finally {
       setLoading(false);
     }
@@ -139,7 +145,13 @@ export const CreateExamModal = ({ isOpen, onClose, subjectId, onSuccess }: Props
 
         {/* BODY SCROLLABLE */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          
+
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
+              {error}
+            </div>
+          )}
+
           {/* Datos Generales */}
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -14,6 +14,8 @@ export const UsersManagement = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  // 6.6: antes el resultado de crear/eliminar usuarios se mostraba con alert()
+  const [listError, setListError] = useState<string | null>(null);
 
   const [linkModalParent, setLinkModalParent] = useState<{ id: number; name: string } | null>(null);
 
@@ -58,23 +60,25 @@ export const UsersManagement = () => {
       });
       setShowModal(false);
       setFormData({ name: '', email: '', password: '', role: 'STUDENT', educationalCenterId: '' }); // Reset
+      setListError(null);
       fetchUsers(); // Recargar lista
-      alert('Usuario creado con éxito');
     } catch (error: unknown) {
       console.error(error);
       const errorObj = error as { response?: { data?: { message?: string } } };
-      alert(errorObj.response?.data?.message || 'Error al crear usuario. Verifica que el email no exista.');
+      setCreateError(errorObj.response?.data?.message || 'Error al crear usuario. Verifica que el email no exista.');
     }
   };
 
   const handleDelete = async (id: number) => {
     if (!confirm('¿Seguro que deseas eliminar este usuario? Esta acción no se puede deshacer.')) return;
+    setListError(null);
     try {
       await deleteUser(id);
       fetchUsers();
     } catch (error) {
       console.error(error);
-      alert('Error al eliminar');
+      const errorObj = error as { response?: { data?: { message?: string } } };
+      setListError(errorObj.response?.data?.message || 'No se pudo eliminar el usuario.');
     }
   };
 
@@ -119,6 +123,9 @@ export const UsersManagement = () => {
 
       {/* Lista */}
       <div className="flex-1 overflow-auto p-4">
+        {listError && (
+          <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg text-sm font-bold border border-red-100">{listError}</div>
+        )}
         {loading ? (
            <div className="flex justify-center items-center h-40">
               <Loader2 className="animate-spin text-primary" size={32} />

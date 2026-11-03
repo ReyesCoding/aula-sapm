@@ -39,6 +39,8 @@ export const AttendancePanel = ({ subjectId }: AttendancePanelProps) => {
   // Vista alumno
   const [myRecords, setMyRecords] = useState<AttendanceRecord[]>([]);
   const [myStats, setMyStats] = useState<AttendanceStats | null>(null);
+  // 6.6: antes el error al guardar se mostraba con alert()
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const loadTeacherView = useCallback(async () => {
     const [studentsData, existingRecords] = await Promise.all([
@@ -83,6 +85,7 @@ export const AttendancePanel = ({ subjectId }: AttendancePanelProps) => {
 
   const handleSave = async () => {
     if (students.length === 0) return;
+    setSaveError(null);
     try {
       setSaving(true);
       await recordAttendance(
@@ -91,8 +94,10 @@ export const AttendancePanel = ({ subjectId }: AttendancePanelProps) => {
         students.map((s) => ({ studentId: s.id, status: statusByStudent[s.id] ?? 'PRESENT' })),
       );
       await loadTeacherView();
-    } catch {
-      alert('Error al guardar la asistencia.');
+    } catch (error) {
+      console.error('Error guardando asistencia:', error);
+      const errorObj = error as { response?: { data?: { message?: string } } };
+      setSaveError(errorObj.response?.data?.message || 'Error al guardar la asistencia.');
     } finally {
       setSaving(false);
     }
@@ -156,6 +161,9 @@ export const AttendancePanel = ({ subjectId }: AttendancePanelProps) => {
   // ---------------- VISTA PROFESOR ----------------
   return (
     <div className="space-y-4">
+      {saveError && (
+        <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm font-bold border border-red-100">{saveError}</div>
+      )}
       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-100">
         <div className="flex items-center gap-2 text-gray-600">
           <CalendarDays size={18} />
