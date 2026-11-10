@@ -16,7 +16,6 @@ import { getDashboardStats } from '../../services/dashboard.service';
 // que usan StatsGrid.tsx y AdminDashboard.tsx. Dos fuentes de verdad
 // divergentes para la misma respuesta de API. Ahora una sola.
 import type {
-  StatItem,
   StudentItem,
   AssignmentTask,
   ExamItem,
