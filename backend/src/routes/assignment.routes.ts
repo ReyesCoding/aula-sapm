@@ -10,7 +10,7 @@ import {
   updateAssignment, 
   deleteAssignment, 
   submitAssignment,
-  gradeAssignment,
+  gradeSubmission,
   getSubmissionsByAssignment
 } from '../controllers/assignment.controller';
 
@@ -93,11 +93,11 @@ router.post(
   submitAssignment
 );
 
-// Calificar tarea (Solo Profesores)
+// Calificar entrega (Solo Profesores). 'id' es el ID de la Submission (v2.1).
 router.patch(
-  '/:id/grade', 
-  authorizeRoles([RoleName.TEACHER]), 
-  gradeAssignment
+  '/:id/grade',
+  authorizeRoles([RoleName.TEACHER]),
+  gradeSubmission
 );
 
 export default router;

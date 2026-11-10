@@ -31,6 +31,13 @@ export interface StudentItem {
 
 export interface AssignmentTask {
   id: number;
+  // v2.1: en la lista "por calificar" del profesor, `id` sigue siendo el ID
+  // de la TAREA (assignment) — para no romper la navegación que ya existe a
+  // /subject/:id con highlightId. `submissionId`, cuando viene, es el ID real
+  // de la entrega (Submission): úsalo como key de lista en vez de `id`,
+  // porque ahora una misma tarea compartida puede aparecer más de una vez
+  // (una fila por cada alumno que entregó) y `id` solo ya no es único ahí.
+  submissionId?: number;
   title: string;
   subject: SubjectSummary;
   student?: UserSummary;

@@ -3,6 +3,7 @@ import prisma from '../prisma/client';
 import { RoleName } from '@prisma/client';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { assertSameCenter, HttpError } from '../utils/tenant';
+import { getVisibleAssignmentsForStudent } from '../services/assignment.service';
 
 // Helper de fechas
 const setEndOfDay = (dateString: string) => {
@@ -110,23 +111,31 @@ export const updateAssignment = async (req: Request, res: Response): Promise<voi
 };
 
 // -----------------------------------------------------
-// 3. CALIFICAR TAREA
+// 3. CALIFICAR ENTREGA
 // -----------------------------------------------------
-export const gradeAssignment = async (req: Request, res: Response): Promise<void> => {
+// v2.1: 'id' ahora es el ID de la Submission (la entrega de UN alumno), no
+// el de la tarea. Antes tarea==entrega en el mismo modelo, así que esta ruta
+// seguía funcionando igual (ver assignment.routes.ts, el path no cambió).
+export const gradeSubmission = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id } = req.params; // Aquí 'id' es el ID de la tarea/entrega
+    const { id } = req.params;
     const { grade, feedback } = req.body;
     const authReq = req as AuthRequest;
     const userId = authReq.user!.userId;
 
-    const assignment = await prisma.assignment.findUnique({ where: { id: Number(id) } });
+    const submission = await prisma.submission.findUnique({
+      where: { id: Number(id) },
+      include: { assignment: { include: { subject: true } } },
+    });
 
-    if (!assignment) {
+    if (!submission) {
       res.status(404).json({ message: 'Entrega no encontrada' });
       return;
     }
 
-    if (assignment.creatorId !== userId) {
+    assertSameCenter(authReq, submission.assignment.subject.educationalCenterId);
+
+    if (submission.assignment.creatorId !== userId) {
       res.status(403).json({ message: 'No tienes permiso para calificar esta tarea' });
       return;
     }
@@ -137,17 +146,22 @@ export const gradeAssignment = async (req: Request, res: Response): Promise<void
        return;
     }
 
-    const updatedAssignment = await prisma.assignment.update({
+    const updatedSubmission = await prisma.submission.update({
       where: { id: Number(id) },
       data: {
         status: 'GRADED',
         grade: numericGrade,
-        feedback: feedback || ''
+        feedback: feedback || '',
+        gradedAt: new Date(),
       },
     });
 
-    res.json({ message: 'Calificación guardada', assignment: updatedAssignment });
+    res.json({ message: 'Calificación guardada', submission: updatedSubmission });
   } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
     console.error(error);
     res.status(500).json({ message: 'Error al calificar' });
   }
@@ -168,27 +182,26 @@ export const getAssignments = async (req: Request, res: Response): Promise<void>
       return;
     }
 
+    // v2.1: el alumno ve cada tarea fusionada con el estado de SU PROPIA
+    // entrega (getVisibleAssignmentsForStudent), en vez de filtrar
+    // Assignment.studentId directamente — ver assignment.service.ts.
+    if (role === RoleName.STUDENT) {
+      let visible = await getVisibleAssignmentsForStudent(userId);
+      if (subjectId) {
+        visible = visible.filter((a) => a.subjectId === Number(subjectId));
+      }
+      res.json(visible);
+      return;
+    }
+
     let whereCondition: any = {};
 
-    if (role === RoleName.STUDENT) {
-      const enrollments = await prisma.enrollment.findMany({
-        where: { studentId: userId },
-        select: { subjectId: true }
-      });
-      const subjectIds = enrollments.map(e => e.subjectId);
-
-      whereCondition = {
-        OR: [
-          { studentId: userId },       
-          { subjectId: { in: subjectIds } }
-        ]
-      };
-    } else if (role === RoleName.TEACHER) {
+    if (role === RoleName.TEACHER) {
       whereCondition = { creatorId: userId };
     } else if (role === RoleName.ADMIN) {
       whereCondition = {};
     } else {
-      res.json([]); 
+      res.json([]);
       return;
     }
 
@@ -283,21 +296,21 @@ export const getAssignmentById = async (req: Request, res: Response): Promise<vo
 };
 
 // -----------------------------------------------------
-// 6. OBTENER ENTREGAS (CORREGIDO PARA TU SCHEMA ACTUAL)
+// 6. OBTENER ENTREGAS
 // -----------------------------------------------------
+// v2.1: ahora consulta la tabla Submission real — una fila por alumno que
+// entregó, en vez de simular una única entrega a partir de la propia tarea
+// (lo que antes limitaba a un solo alumno por tarea compartida, ver
+// CODE_REVIEW.md 10.1).
 export const getSubmissionsByAssignment = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
         const authReq = req as AuthRequest;
         const { userId, role } = authReq.user!;
 
-        // Buscamos la tarea. 
-        // ⚠️ NOTA SENIOR: En tu esquema actual (sin tabla Submission), la tarea SE CONVIERTE en la entrega 
-        // cuando el estudiante la envía. Por eso devolvemos la tarea misma si tiene status de entrega.
-        
         const assignment = await prisma.assignment.findUnique({
              where: { id: Number(id) },
-             include: { student: true, subject: true } // Incluimos info del estudiante si existe
+             include: { subject: true }
         });
 
         if (!assignment) {
@@ -322,21 +335,11 @@ export const getSubmissionsByAssignment = async (req: Request, res: Response): P
             return;
         }
 
-        const submissions = [];
-
-        // Si la tarea tiene status de enviada o calificada, la contamos como entrega
-        if (assignment && (assignment.status === 'SUBMITTED' || assignment.status === 'GRADED')) {
-             submissions.push({
-                 id: assignment.id,
-                 // Si student es null (tarea maestra), mostramos un placeholder o el creador (no ideal, pero evita crash)
-                 student: assignment.student || { name: 'Estudiante (Sin Asignar)', email: 'N/A' },
-                 status: assignment.status,
-                 grade: assignment.grade,
-                 submissionUrl: assignment.submissionUrl,
-                 submittedAt: assignment.updatedAt,
-                 feedback: assignment.feedback
-             });
-        }
+        const submissions = await prisma.submission.findMany({
+            where: { assignmentId: Number(id) },
+            include: { student: { select: { name: true, email: true } } },
+            orderBy: { submittedAt: 'desc' },
+        });
 
         res.json(submissions);
     } catch (error) {
@@ -375,6 +378,14 @@ export const submitAssignment = async (req: Request, res: Response): Promise<voi
     // v2.0: no se puede entregar una tarea de otro centro
     assertSameCenter(authReq, assignment.subject.educationalCenterId);
 
+    // Si la tarea fue asignada individualmente a OTRO alumno específico, esta
+    // no es tuya — no corresponde que la entregues (distinto de "ya la
+    // entregó otro", ver más abajo: esto es "nunca fue para ti").
+    if (assignment.studentId != null && assignment.studentId !== studentId) {
+      res.status(403).json({ message: 'Esta tarea fue asignada a otro estudiante.' });
+      return;
+    }
+
     // 🔒 Bug funcional 4.2 (antes corregido): no se verificaba inscripción -
     // cualquier STUDENT del mismo centro podía entregar una tarea de una
     // materia en la que nunca se inscribió.
@@ -386,38 +397,32 @@ export const submitAssignment = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // ⚠️ LIMITACIÓN DE MODELO DE DATOS (ver CODE_REVIEW.md, hallazgo nuevo 3.5):
-    // Assignment no tiene una tabla Submission propia — el registro de la
-    // "entrega" vive en la MISMA fila que la tarea maestra (studentId/status/
-    // grade sobre Assignment). Eso significa que una tarea compartida por
-    // varios alumnos de una materia solo puede ser "reclamada" por el primero
-    // que la entrega; evitamos aquí que un segundo alumno pueda robar/
-    // sobrescribir la entrega de otro ya reclamada.
-    if (assignment.studentId != null && assignment.studentId !== studentId) {
-      res.status(409).json({
-        message: 'Esta tarea ya fue entregada por otro estudiante. El modelo de datos actual no soporta múltiples entregas independientes para una misma tarea compartida (ver CODE_REVIEW.md).'
-      });
-      return;
-    }
-
-    // Bug funcional 4.1 (antes corregido): si la tarea ya había sido
-    // calificada y el alumno vuelve a entregar, la calificación/feedback
-    // anteriores quedaban "pegados" mostrando un estado inconsistente
-    // (SUBMITTED pero con grade/feedback de una entrega previa). Los
-    // limpiamos explícitamente en cada nueva entrega.
-    const updatedAssignment = await prisma.assignment.update({
-      where: { id: Number(id) },
-      data: {
+    // v2.1 (CODE_REVIEW.md 10.1, resuelto): la entrega vive en su propia fila
+    // (Submission), una por alumno. Ya no existe el límite de "solo el
+    // primero que entrega se queda con la tarea compartida" — cada alumno
+    // inscrito tiene su propia entrega independiente. Volver a entregar
+    // (upsert) limpia la nota/feedback anteriores, igual que antes.
+    const submission = await prisma.submission.upsert({
+      where: { assignmentId_studentId: { assignmentId: Number(id), studentId } },
+      create: {
+        assignmentId: Number(id),
+        studentId,
         status: 'SUBMITTED',
         submissionUrl: file.filename,
         submissionComment: comment || null,
-        studentId: studentId, // ✅ Vinculamos al estudiante que entregó
+      },
+      update: {
+        status: 'SUBMITTED',
+        submissionUrl: file.filename,
+        submissionComment: comment || null,
         grade: null,
         feedback: null,
+        gradedAt: null,
+        submittedAt: new Date(),
       },
     });
 
-    res.json({ message: 'Tarea entregada con éxito 🚀', assignment: updatedAssignment });
+    res.json({ message: 'Tarea entregada con éxito 🚀', submission });
   } catch (error) {
     if (error instanceof HttpError) {
       res.status(error.statusCode).json({ message: error.message });
