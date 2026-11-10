@@ -209,7 +209,11 @@ Hice exactamente lo que pediste: "vuelve y testea de nuevo." Al re-leer cada arc
 
 ### 10.1 — Limitación real del modelo de datos de `Assignment` (el hallazgo más importante de esta pasada)
 
-**Esto no es un bug de autorización — es una limitación de diseño que afecta la funcionalidad central de "tareas".**
+> ✅ **RESUELTO (sesión de seguimiento, previo al deploy):** se separó la entrega en su propia tabla `Submission` (`assignmentId`, `studentId`, `status`, `grade`, `feedback`, `submissionUrl`, `submissionComment`, únicos por `(assignmentId, studentId)`), exactamente como se recomendaba abajo. `Assignment` quedó como la tarea maestra pura (sin `status`/`grade`/campos de entrega). Cada alumno inscrito ahora tiene su propia entrega independiente de una misma tarea compartida — el `409` de "ya fue entregada por otro" que se describe más abajo ya no existe porque ya no hace falta. Como efecto secundario, también se destraba el promedio por materia (`grades.service.ts`) y el reporte PDF del alumno (`report.controller.ts`), que antes excluían las tareas compartidas del cálculo por el mismo motivo. La migración (`backend/prisma/migrations/20261110023544_add_submission_model/`) preserva como filas de `Submission` cualquier entrega que ya existiera en `Assignment` antes del cambio — no se pierde nada de lo que ya estaba cargado. Falta un paso manual: correr `npx prisma migrate deploy` contra la base real (no pude ejecutarlo yo mismo desde este entorno, ver aviso al final de la sección 11).
+>
+> El modelo `Course` (10.2, debajo) sigue siendo una decisión pendiente separada — no se tocó en este cambio.
+
+**Esto no es un bug de autorización — es una limitación de diseño que afecta la funcionalidad central de "tareas".** (Diagnóstico original, dejado como registro histórico de qué se encontró y por qué era un problema real.)
 
 Mirá el modelo en `schema.prisma`:
 
