@@ -39,7 +39,7 @@ export async function computeSubjectAverage(studentId: number, subjectId: number
   const breakdown: GradeBreakdownItem[] = [];
 
   // 1) Entregas de tareas calificadas de este alumno en esta materia.
-  const submissions = await prisma.submission.findMany({
+  const gradedSubmissions = await prisma.submission.findMany({
     where: {
       studentId,
       status: AssignmentStatus.GRADED,
@@ -48,7 +48,7 @@ export async function computeSubjectAverage(studentId: number, subjectId: number
     },
     select: { id: true, grade: true, assignment: { select: { title: true } } },
   });
-  for (const s of submissions) {
+  for (const s of gradedSubmissions) {
     breakdown.push({ source: 'ASSIGNMENT', id: s.id, label: s.assignment.title, score: s.grade as number, weight: 1 });
   }
 
