@@ -55,6 +55,7 @@ model User {
   // Relaciones: Tareas
   createdAssignments  Assignment[]  @relation("CreatedBy") // Tareas que el profesor creó
   myAssignments       Assignment[]  @relation("AssignedTo") // Tareas asignadas al alumno (individuales)
+  submissions         Submission[]  @relation("SubmissionsByStudent") // Entregas hechas por este alumno (v2.1)
   
   // Relaciones: Familia
   children            ParentChild[] @relation("Parent")
@@ -173,20 +174,13 @@ model Enrollment {
 // ==========================================
 
 model Assignment {
-  id          Int              @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   title       String
   description String?
   dueDate     DateTime
-  
-  status      AssignmentStatus @default(PENDING) 
-  grade       Int?
 
-  // Gestión de Archivos y Entregas
-  attachmentUrl     String? // Archivo adjunto por el profesor
-  submissionUrl     String? // Archivo entregado por el alumno
-  submissionComment String? // Comentario del alumno al entregar
-  feedback          String? // Feedback del profesor
-  fileUrl           String? // (Legacy/Backup)
+  // Archivo adjunto por el profesor (material de referencia)
+  attachmentUrl String?
 
   // Relaciones
   subjectId   Int
@@ -196,15 +190,54 @@ model Assignment {
   creator     User    @relation("CreatedBy", fields: [creatorId], references: [id])
 
   // Asignación específica (Opcional, si es null es para todos los de la materia)
-  studentId   Int?    
+  studentId   Int?
   student     User?   @relation("AssignedTo", fields: [studentId], references: [id])
 
   // (Fase 2)
   courseId    Int?
   course      Course? @relation(fields: [courseId], references: [id])
 
+  // Entregas (v2.1): una fila por alumno que entrega, ver modelo Submission
+  // debajo. Antes el estado/nota/archivo de la entrega vivían en esta misma
+  // fila (studentId/status/grade/submissionUrl/feedback), lo que significaba
+  // que una tarea compartida con toda la materia solo podía ser "reclamada"
+  // por un único alumno en total (CODE_REVIEW.md, hallazgo 10.1). Separar la
+  // entrega en su propia tabla permite que cada alumno inscrito tenga su
+  // propia entrega independiente de la misma tarea.
+  submissions Submission[]
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// Entrega de un alumno para una tarea (v2.1). Una fila por (assignment, student).
+model Submission {
+  id          Int              @id @default(autoincrement())
+
+  assignmentId Int
+  assignment   Assignment      @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  studentId   Int
+  student     User             @relation("SubmissionsByStudent", fields: [studentId], references: [id])
+
+  status      AssignmentStatus @default(SUBMITTED)
+  grade       Int?
+  feedback    String?          // Feedback del profesor al calificar
+
+  submissionUrl     String?    // Archivo entregado por el alumno
+  submissionComment String?    // Comentario del alumno al entregar
+
+  submittedAt DateTime  @default(now())
+  gradedAt    DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Un alumno tiene a lo sumo una entrega por tarea (volver a entregar
+  // actualiza esta misma fila, no crea una nueva).
+  @@unique([assignmentId, studentId])
+  @@index([assignmentId])
+  @@index([studentId])
 }
 
 // ==========================================

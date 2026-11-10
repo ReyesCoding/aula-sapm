@@ -9,6 +9,7 @@ import { AuthRequest } from '../middlewares/auth.middleware';
 // PrismaClient por proceso, siempre.
 import prisma from '../prisma/client';
 import { assertCanViewStudentGrades } from '../services/grades.policy';
+import { getVisibleAssignmentsForStudent } from '../services/assignment.service';
 import { HttpError } from '../utils/tenant';
 
 // Nota: la firma se tipa como (req: Request, ...) y se castea adentro a
@@ -40,11 +41,11 @@ export const generateStudentReport = async (req: Request, res: Response): Promis
     const student = await prisma.user.findUnique({ where: { id: targetStudentId } });
     if (!student) return res.status(404).json({ message: 'Estudiante no encontrado' });
 
-    const assignments = await prisma.assignment.findMany({
-      where: { studentId: targetStudentId },
-      include: { subject: true },
-      orderBy: { dueDate: 'asc' }
-    });
+    // v2.1 (CODE_REVIEW.md 10.1): antes filtraba Assignment.studentId
+    // directamente, lo que solo mostraba tareas asignadas individualmente al
+    // alumno — las tareas compartidas con toda la materia que aún no había
+    // entregado ni siquiera aparecían en su propio reporte de progreso.
+    const assignments = await getVisibleAssignmentsForStudent(targetStudentId);
 
     // 2. Configurar Headers para descarga
     res.setHeader('Content-Type', 'application/pdf');
@@ -70,12 +71,16 @@ export const generateStudentReport = async (req: Request, res: Response): Promis
     doc.moveDown(0.5);
 
     assignments.forEach((task, index) => {
-      const statusIcon = task.status === 'SUBMITTED' ? '[OK]' : '[Pendiente]';
+      // Bug preexistente corregido de paso: comparaba solo contra 'SUBMITTED',
+      // así que una tarea YA CALIFICADA ('GRADED') se mostraba como
+      // "[Pendiente]" en el reporte del propio alumno.
+      const isDone = task.status === 'SUBMITTED' || task.status === 'GRADED';
+      const statusIcon = isDone ? '[OK]' : '[Pendiente]';
 // Usamos ?. (optional chaining) y || 'General' por si no tiene materia asignada
       const subjectName = task.subject?.name || (task as any).course?.name || 'General';
       const line = `${index + 1}. ${subjectName}: ${task.title} - ${statusIcon}`;
       // Color según estado
-      if (task.status === 'SUBMITTED') doc.fillColor('green');
+      if (isDone) doc.fillColor('green');
       else doc.fillColor('red');
 
       doc.text(line);

@@ -4,11 +4,14 @@ import { AssignmentStatus, EnrollmentStatus } from '@prisma/client';
 /**
  * Cálculo de promedios (Bloque 3, v2.0). Combina tres fuentes de nota por
  * materia en un único promedio ponderado:
- *   1) Assignment (tareas) ya calificadas (status GRADED, grade no nulo),
- *      SOLO las asignadas específicamente a ese alumno (studentId = studentId).
- *      Las tareas "para toda la materia" (studentId null) comparten una sola
- *      fila sin un campo de nota por-alumno en el modelo actual, así que no
- *      se pueden promediar de forma individual con los datos existentes.
+ *   1) Submission (entregas de tareas) ya calificadas (status GRADED, grade
+ *      no nulo). v2.1 (CODE_REVIEW.md 10.1, resuelto): antes esto leía
+ *      Assignment.grade directamente y SOLO podía incluir tareas asignadas
+ *      individualmente a ese alumno — una tarea "para toda la materia"
+ *      compartía una sola fila sin nota por-alumno, así que quedaba afuera
+ *      del promedio aunque el alumno la hubiera entregado y la hubieran
+ *      calificado. Con la entrega en su propia tabla, toda tarea calificada
+ *      de ese alumno entra al promedio, compartida o individual.
  *   2) ExamSubmission (exámenes respondidos), normalizado a una escala 0-100
  *      usando la suma de puntos de las preguntas del examen.
  *   3) Evaluation (notas manuales del profesor), con su propio peso.
@@ -35,13 +38,18 @@ export interface SubjectAverageResult {
 export async function computeSubjectAverage(studentId: number, subjectId: number): Promise<SubjectAverageResult> {
   const breakdown: GradeBreakdownItem[] = [];
 
-  // 1) Tareas calificadas, asignadas directamente a este alumno.
-  const assignments = await prisma.assignment.findMany({
-    where: { subjectId, studentId, status: AssignmentStatus.GRADED, grade: { not: null } },
-    select: { id: true, title: true, grade: true },
+  // 1) Entregas de tareas calificadas de este alumno en esta materia.
+  const gradedSubmissions = await prisma.submission.findMany({
+    where: {
+      studentId,
+      status: AssignmentStatus.GRADED,
+      grade: { not: null },
+      assignment: { subjectId },
+    },
+    select: { id: true, grade: true, assignment: { select: { title: true } } },
   });
-  for (const a of assignments) {
-    breakdown.push({ source: 'ASSIGNMENT', id: a.id, label: a.title, score: a.grade as number, weight: 1 });
+  for (const s of gradedSubmissions) {
+    breakdown.push({ source: 'ASSIGNMENT', id: s.id, label: s.assignment.title, score: s.grade as number, weight: 1 });
   }
 
   // 2) Exámenes respondidos de esta materia.

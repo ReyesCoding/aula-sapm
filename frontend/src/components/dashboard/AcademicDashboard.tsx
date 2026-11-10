@@ -165,7 +165,10 @@ export function AcademicDashboard() {
                         </div>
                     ) : (
                         details.assignmentsToGrade.map((task: AssignmentTask) => (
-                            <div key={task.id} className="p-3 border rounded-lg hover:bg-gray-50 flex justify-between items-center cursor-pointer"
+                            // v2.1: una misma tarea compartida puede listar varias entregas
+                            // pendientes (una por alumno) — usamos submissionId como key
+                            // cuando viene, para no repetir el id de la tarea.
+                            <div key={task.submissionId ?? task.id} className="p-3 border rounded-lg hover:bg-gray-50 flex justify-between items-center cursor-pointer"
                                  onClick={() => { 
                                      setIsModalOpen(false); 
                                      navigate(`/subject/${task.subject.id}`, { state: { activeTab: 'assignments', highlightId: task.id } }); 
