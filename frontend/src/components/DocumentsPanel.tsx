@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Upload, FileText, Image as ImageIcon, FileArchive, File as FileIcon, Trash2, Loader2, Download } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE_URL } from '../config';
 import {
   getSubjectMaterials,
   uploadSubjectMaterial,
@@ -132,7 +133,7 @@ export const DocumentsPanel = ({ subjectId }: DocumentsPanelProps) => {
                 </p>
               </div>
               <a
-                href={`/uploads/${doc.filename}`}
+                href={`${API_BASE_URL}/uploads/${doc.filename}`}
                 target="_blank"
                 rel="noreferrer"
                 className="p-2 text-gray-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition shrink-0"

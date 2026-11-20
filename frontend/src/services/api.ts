@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
 
 // 1. Crear la instancia de Axios
 // Bloque 7 (deployment): baseURL relativa en vez de "http://localhost:3001" fijo.
@@ -6,7 +7,7 @@ import axios from 'axios';
 // En producción (Docker), nginx hace lo mismo dentro del contenedor del frontend.
 // Mismo código en los dos entornos, sin variables de entorno que mantener sincronizadas.
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${API_BASE_URL}/api`,
 });
 
 // 2. Interceptor de Solicitud (Request)

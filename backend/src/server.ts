@@ -35,9 +35,17 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" } // Permite cargar imágenes/archivos
 }));
 
-// Configuración CORS Permisiva para Desarrollo (Permite Frontend Vite)
+// Configuración CORS: si CORS_ORIGIN está definida (producción / Render),
+// solo se permiten esos orígenes exactos. Si no está definida (dev local,
+// o el flujo de VPS con nginx en el mismo origen), se mantiene el
+// comportamiento permisivo anterior para no romper nada existente.
+const allowedOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: true, // Acepta cualquier origen en dev (útil para localhost)
+  origin: allowedOrigins.length > 0 ? allowedOrigins : true,
   credentials: true
 }));
 

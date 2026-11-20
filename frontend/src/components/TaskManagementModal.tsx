@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { X, Trash2, Edit, Save, FileText, User, AlertTriangle, Loader2, MessageSquare } from 'lucide-react';
 import api from '../services/api';
+import { API_BASE_URL } from '../config';
 import { deleteAssignment } from '../services/assignment.service';
 
 interface TaskManagementModalProps {
@@ -170,7 +171,7 @@ export const TaskManagementModal = ({ isOpen, onClose, assignmentId, onTaskUpdat
                             </div>
                             <div>
                                 <p className="text-sm font-bold text-blue-900">Material de Referencia</p>
-                                <a href={`/uploads/${details.attachmentUrl}`} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">
+                                <a href={`${API_BASE_URL}/uploads/${details.attachmentUrl}`} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">
                                     Ver archivo original
                                 </a>
                             </div>
@@ -214,7 +215,7 @@ export const TaskManagementModal = ({ isOpen, onClose, assignmentId, onTaskUpdat
                                             {/* Acciones: Ver Archivo + Calificar */}
                                             <div className="flex items-center gap-4 w-full md:w-auto">
                                                 {sub.submissionUrl ? (
-                                                    <a href={`/uploads/${sub.submissionUrl}`} target="_blank" rel="noreferrer" 
+                                                    <a href={`${API_BASE_URL}/uploads/${sub.submissionUrl}`} target="_blank" rel="noreferrer" 
                                                        className="flex items-center gap-2 text-sm text-gray-700 hover:text-blue-600 bg-gray-100 hover:bg-blue-50 px-4 py-2 rounded-lg transition-colors border border-gray-200">
                                                         <FileText size={16}/> Ver Trabajo
                                                     </a>

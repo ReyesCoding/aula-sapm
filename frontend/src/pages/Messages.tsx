@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Send, Loader2, Paperclip, X, MessageSquare } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE_URL } from '../config';
 import {
   getConversations,
   getConversation,
@@ -183,7 +184,7 @@ export default function Messages() {
                           {m.attachments.length > 0 && (
                             <div className="mt-1 space-y-1">
                               {m.attachments.map((a) => (
-                                <a key={a.id} href={`/uploads/${a.filename}`} target="_blank" rel="noreferrer"
+                                <a key={a.id} href={`${API_BASE_URL}/uploads/${a.filename}`} target="_blank" rel="noreferrer"
                                   className={`flex items-center gap-1.5 text-xs underline ${isMine ? 'text-violet-100' : 'text-violet-600'}`}>
                                   <Paperclip size={12} /> {a.originalName}
                                 </a>
