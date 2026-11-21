@@ -40,7 +40,7 @@ async function main() {
   // Centro: administrador del centro educativo
   await prisma.user.create({
     data: {
-      name: 'Administración Centro Legacy',
+      name: 'Administración',
       email: 'centro@aula.com',
       password: passwordHash,
       role: RoleName.CENTRO,

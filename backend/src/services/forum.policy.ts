@@ -24,12 +24,10 @@ export async function loadSubjectOrThrow(subjectId: number): Promise<Subject> {
 export async function assertCanAccessForum(actor: ForumActor, subject: Subject): Promise<void> {
   if (actor.role === RoleName.ADMIN) return;
 
-  if (actor.role === RoleName.CENTRO) {
-    if (subject.educationalCenterId !== actor.educationalCenterId) {
-      throw new HttpError(403, 'Esta materia pertenece a otro centro');
-    }
-    return;
-  }
+  // v3.0 (nov. 2026): el foro es un espacio de la clase (profesor +
+  // estudiantes inscritos), no un canal administrativo — Centro ya no entra
+  // aquí (ni a ver ni a moderar), mismo criterio que para calificar/tomar
+  // asistencia. Su rol es el profesorado, no el día a día de cada materia.
 
   if (actor.role === RoleName.TEACHER) {
     if (subject.teacherId === actor.userId) return;
@@ -53,7 +51,6 @@ export async function assertCanAccessForum(actor: ForumActor, subject: Subject):
 /** ¿Puede moderar esta materia (crear/fijar/cerrar temas, borrar cualquier post)? */
 export function canModerateSubject(actor: ForumActor, subject: Subject): boolean {
   if (actor.role === RoleName.ADMIN) return true;
-  if (actor.role === RoleName.CENTRO) return subject.educationalCenterId === actor.educationalCenterId;
   if (actor.role === RoleName.TEACHER) return subject.teacherId === actor.userId;
   return false;
 }

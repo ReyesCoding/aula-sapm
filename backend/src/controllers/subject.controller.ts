@@ -198,3 +198,104 @@ export const createSubject = async (req: Request, res: Response): Promise<void> 
     res.status(500).json({ message: 'Error creando la materia' });
   }
 };
+// 👇 NUEVO (v3.0): Centro necesitaba poder "asignar materias" a su
+// profesorado más allá del momento de creación — reasignar la materia de
+// un profesor a otro cuando cambia de puesto, o corregir nombre/
+// descripción. Antes no existía ningún endpoint de edición.
+export const updateSubject = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authReq = req as AuthRequest;
+    const actor = authReq.user!;
+    const subjectId = Number(req.params.id);
+    const { name, description, teacherId: bodyTeacherId } = req.body as {
+      name?: string;
+      description?: string;
+      teacherId?: number;
+    };
+
+    const subject = await prisma.subject.findUnique({ where: { id: subjectId } });
+    if (!subject) { res.status(404).json({ message: 'Materia no encontrada' }); return; }
+
+    // TEACHER solo puede editar nombre/descripción de SU PROPIA materia (no
+    // reasignarla a otro profesor ni tocar materias ajenas).
+    if (actor.role === 'TEACHER') {
+      if (subject.teacherId !== actor.userId) {
+        res.status(403).json({ message: 'No eres el profesor titular de esta materia' });
+        return;
+      }
+      if (bodyTeacherId !== undefined && Number(bodyTeacherId) !== actor.userId) {
+        res.status(403).json({ message: 'No puedes reasignar tu materia a otro profesor' });
+        return;
+      }
+    } else if (actor.role === 'CENTRO' || actor.role === 'ADMIN') {
+      // Centro/Admin: la materia debe pertenecer a su centro (Admin pasa siempre).
+      if (actor.role === 'CENTRO' && subject.educationalCenterId !== actor.educationalCenterId) {
+        res.status(403).json({ message: 'Esta materia pertenece a otro centro' });
+        return;
+      }
+    } else {
+      res.status(403).json({ message: 'No autorizado' });
+      return;
+    }
+
+    let teacherId: number | undefined;
+    if (bodyTeacherId !== undefined && actor.role !== 'TEACHER') {
+      const teacher = await prisma.user.findUnique({ where: { id: Number(bodyTeacherId) } });
+      if (!teacher || teacher.role !== 'TEACHER') {
+        res.status(400).json({ message: 'El teacherId indicado no corresponde a un profesor válido' });
+        return;
+      }
+      if (actor.role === 'CENTRO' && teacher.educationalCenterId !== actor.educationalCenterId) {
+        res.status(400).json({ message: 'Ese profesor no pertenece a tu centro' });
+        return;
+      }
+      teacherId = teacher.id;
+    }
+
+    const updated = await prisma.subject.update({
+      where: { id: subjectId },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(description !== undefined && { description }),
+        ...(teacherId !== undefined && { teacherId }),
+      },
+      include: { teacher: { select: { id: true, name: true } } },
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error actualizando la materia' });
+  }
+};
+
+// 👇 NUEVO (v3.0): borrar una materia (Centro/Admin). Mismo patrón de
+// protección por llave foránea que users.controller.ts::deleteUser — si
+// tiene tareas/exámenes/inscripciones asociadas, se pide desactivarla en
+// vez de borrarla (aquí: simplemente no se permite, no hay campo isActive
+// en Subject todavía).
+export const deleteSubject = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authReq = req as AuthRequest;
+    const actor = authReq.user!;
+    const subjectId = Number(req.params.id);
+
+    const subject = await prisma.subject.findUnique({ where: { id: subjectId } });
+    if (!subject) { res.status(404).json({ message: 'Materia no encontrada' }); return; }
+
+    if (actor.role === 'CENTRO' && subject.educationalCenterId !== actor.educationalCenterId) {
+      res.status(403).json({ message: 'Esta materia pertenece a otro centro' });
+      return;
+    }
+
+    await prisma.subject.delete({ where: { id: subjectId } });
+    res.json({ message: 'Materia eliminada correctamente' });
+  } catch (error) {
+    console.error(error);
+    if ((error as { code?: string }).code === 'P2003') {
+      res.status(400).json({ message: 'No se puede eliminar: la materia tiene tareas, exámenes o inscripciones asociadas.' });
+      return;
+    }
+    res.status(500).json({ message: 'Error eliminando la materia' });
+  }
+};

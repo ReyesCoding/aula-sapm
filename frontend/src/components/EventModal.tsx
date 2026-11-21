@@ -249,13 +249,21 @@ export const EventModal = ({ isOpen, onClose, onSaved, defaultDate, event }: Eve
           </label>
 
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">Ubicación (opcional)</label>
+            <label className="block text-sm font-bold text-gray-700 mb-2">
+              {scope === 'SUBJECT' ? 'Ubicación o enlace de clase en vivo (opcional)' : 'Ubicación (opcional)'}
+            </label>
             <input
               type="text"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
+              placeholder={scope === 'SUBJECT' ? 'https://meet.google.com/xxx-xxxx-xxx' : undefined}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-600 focus:border-transparent outline-none text-sm"
             />
+            {scope === 'SUBJECT' && (
+              <p className="text-xs text-gray-400 mt-1.5">
+                Pega aquí tu enlace de Google Meet (o el de la plataforma que uses): a tus alumnos les aparecerá como "Unirse a la clase en vivo" en el calendario.
+              </p>
+            )}
           </div>
 
           <div>

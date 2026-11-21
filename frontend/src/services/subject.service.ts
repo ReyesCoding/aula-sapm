@@ -46,3 +46,20 @@ export const manageSubjectEnrollment = async (
   const { data } = await api.patch<{ message: string }>('/subjects/enrollment', { enrollmentId, status });
   return data;
 };
+
+export interface UpdateSubjectPayload {
+  name?: string;
+  description?: string;
+  /** Reasignar la materia a otro profesor (Centro/Admin). */
+  teacherId?: number;
+}
+
+export const updateSubject = async (subjectId: number, payload: UpdateSubjectPayload): Promise<Subject> => {
+  const { data } = await api.patch<Subject>(`/subjects/${subjectId}`, payload);
+  return data;
+};
+
+export const deleteSubject = async (subjectId: number): Promise<{ message: string }> => {
+  const { data } = await api.delete<{ message: string }>(`/subjects/${subjectId}`);
+  return data;
+};

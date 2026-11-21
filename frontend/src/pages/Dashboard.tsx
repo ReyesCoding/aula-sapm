@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { AcademicDashboard } from '../components/dashboard/AcademicDashboard';
 import { AdminDashboard } from '../components/dashboard/AdminDashboard';
+import { CentroDashboard } from '../components/dashboard/CentroDashboard';
 import { Loader2, LogOut, User, Settings, ChevronDown, MessageCircle, CalendarDays } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getGlobalUnreadCount } from '../services/messaging.service';
@@ -122,6 +123,8 @@ export const Dashboard = () => {
       <main className="py-6">
         {user.role === 'ADMIN' ? (
              <AdminDashboard />
+        ) : user.role === 'CENTRO' ? (
+             <CentroDashboard />
         ) : (
              <AcademicDashboard />
         )}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Loader2, MapPin, Clock } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Loader2, MapPin, Clock, Video } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getEvents, type CalendarEvent } from '../services/calendar.service';
 import { getSubjects } from '../services/subject.service';
@@ -269,9 +269,21 @@ export default function CalendarPage() {
                           <Clock size={11} /> {formatTime(ev.startsAt, ev.allDay)}
                         </p>
                         {ev.location && (
-                          <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                            <MapPin size={11} /> {ev.location}
-                          </p>
+                          /^https?:\/\//i.test(ev.location) ? (
+                            <a
+                              href={ev.location}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs text-emerald-600 font-bold flex items-center gap-1 mt-0.5 hover:underline w-fit"
+                            >
+                              <Video size={11} /> Unirse a la clase en vivo
+                            </a>
+                          ) : (
+                            <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                              <MapPin size={11} /> {ev.location}
+                            </p>
+                          )
                         )}
                         {ev.subject && (
                           <p className="text-[10px] text-emerald-600 font-bold mt-0.5">{ev.subject.name}</p>

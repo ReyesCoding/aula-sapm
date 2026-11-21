@@ -5,10 +5,23 @@ import bcrypt from 'bcryptjs'; // 👈 IMPORTANTE: Asegúrate de tener esto inst
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { centerWhere } from '../utils/tenant';
 
-// --- 1. LISTAR TODOS (Para el Panel de Gestión Admin) ---
+// --- 1. LISTAR (Panel de Gestión) ---
+// v3.0 (nov. 2026): antes este endpoint devolvía TODOS los usuarios de
+// TODOS los centros a cualquiera que pudiera llamarlo (solo Admin podía,
+// por la ruta, pero sin ningún filtro adentro). Ahora también lo usa
+// Centro para gestionar a SU PROPIO profesorado (nunca estudiantes/padres
+// de otros centros, y nunca cuentas CENTRO/ADMIN) — ver razonamiento en
+// CODE_REVIEW.md sección 10.6: Centro administra personal, no alumnado.
 export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
   try {
+    const actor = (req as AuthRequest).user!;
+    const where =
+      actor.role === RoleName.CENTRO
+        ? { educationalCenterId: actor.educationalCenterId, role: RoleName.TEACHER }
+        : {};
+
     const users = await prisma.user.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, 
@@ -26,10 +39,21 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-// --- 2. CREAR USUARIO (Admin - CON SEGURIDAD BCRYPT) ---
+// --- 2. CREAR USUARIO (Admin: cualquier rol/centro. Centro: SOLO
+// profesores de su propio centro — ver nota de getAllUsers) ---
 export const createUser = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password, role, educationalCenterId } = req.body;
+    const actor = (req as AuthRequest).user!;
+    const { name, email, password } = req.body;
+    let { role, educationalCenterId } = req.body as { role?: RoleName; educationalCenterId?: number };
+
+    // v3.0: si quien crea es Centro, no confiamos en lo que mande el body
+    // para role/educationalCenterId — se fuerzan server-side, igual que ya
+    // se hacía en subject.controller.ts::createSubject para el mismo rol.
+    if (actor.role === RoleName.CENTRO) {
+      role = RoleName.TEACHER;
+      educationalCenterId = actor.educationalCenterId ?? undefined;
+    }
 
     // Validación simple
     if (!name || !email || !password || !role) {
@@ -81,15 +105,17 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
   }
 };
 
-// --- 3. ELIMINAR USUARIO (Admin) ---
+// --- 3. ELIMINAR USUARIO (Admin: cualquiera. Centro: solo profesores de
+// su propio centro) ---
 export const deleteUser = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const currentUserId = (req as AuthRequest).user!.userId; // Obtenemos quién está haciendo la petición
+    const actor = (req as AuthRequest).user!;
+    const currentUserId = actor.userId;
 
     // 🛡️ LÓGICA DE PROTECCIÓN
     if (Number(id) === currentUserId) {
-      res.status(400).json({ message: 'No puedes eliminar tu propia cuenta de administrador mientras estás logueado.' });
+      res.status(400).json({ message: 'No puedes eliminar tu propia cuenta mientras estás logueado.' });
       return;
     }
 
@@ -98,6 +124,16 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
     if (!userExists) {
         res.status(404).json({ message: 'Usuario no encontrado' });
         return;
+    }
+
+    // v3.0: Centro solo puede borrar profesores de su propio centro — no
+    // estudiantes, padres, otras cuentas Centro, ni Admin, ni profesores de
+    // otro centro.
+    if (actor.role === RoleName.CENTRO) {
+      if (userExists.role !== RoleName.TEACHER || userExists.educationalCenterId !== actor.educationalCenterId) {
+        res.status(403).json({ message: 'Como Centro solo puedes eliminar profesores de tu propio centro.' });
+        return;
+      }
     }
 
     await prisma.user.delete({ where: { id: Number(id) } });
