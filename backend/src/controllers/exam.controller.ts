@@ -400,3 +400,62 @@ export const toggleExamResults = async (req: Request, res: Response): Promise<vo
     res.status(500).json({ message: "Error actualizando estado" });
   }
 };
+// 7. EDITAR EXAMEN (título / descripción / fecha límite)
+// No existía forma de corregir la fecha límite de un examen ya creado: si un
+// profesor se equivocaba (o, como en los datos de demo, el tiempo pasa y el
+// examen queda "Cerrado"), no había manera de reabrirlo sin borrar y crear
+// uno nuevo. Mismo criterio de permisos que toggleExamResults.
+const updateExamSchema = z.object({
+  title: z.string().min(3).optional(),
+  description: z.string().optional(),
+  dueDate: z.string().optional(),
+});
+
+export const updateExam = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const authReq = req as AuthRequest;
+    const { userId, role } = authReq.user!;
+
+    if (role !== 'TEACHER' && role !== 'ADMIN' && role !== 'CENTRO') {
+      res.status(403).json({ message: 'No autorizado' });
+      return;
+    }
+
+    const exam = await prisma.exam.findUnique({
+      where: { id: Number(id) },
+      include: { subject: { select: { educationalCenterId: true } } },
+    });
+    if (!exam) { res.status(404).json({ message: 'Examen no encontrado' }); return; }
+
+    if (role === 'TEACHER' && exam.teacherId !== userId) {
+      res.status(403).json({ message: 'No eres el profesor de este examen' });
+      return;
+    }
+    assertSameCenter(authReq, exam.subject.educationalCenterId);
+
+    const data = updateExamSchema.parse(req.body);
+
+    const updated = await prisma.exam.update({
+      where: { id: Number(id) },
+      data: {
+        ...(data.title !== undefined && { title: data.title }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.dueDate !== undefined && { dueDate: new Date(data.dueDate) }),
+      },
+    });
+
+    res.json(updated);
+  } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ message: 'Datos inválidos', errors: error.issues });
+      return;
+    }
+    console.error(error);
+    res.status(500).json({ message: 'Error actualizando examen' });
+  }
+};

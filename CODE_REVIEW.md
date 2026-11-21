@@ -255,11 +255,22 @@ Este es el hallazgo de seguridad más parecido en severidad a los de la sección
 
 **Fix aplicado:** agregué `centerWhere(authReq)` al `where` de `searchUsers` (ADMIN sigue viendo todos; todos los demás, solo su propio centro), y restringí la ruta a los únicos roles que realmente la usan desde el frontend: `authorizeRoles([TEACHER, CENTRO, ADMIN])` (los dos únicos call-sites son el selector de profesor al crear materia y la vinculación de hijos en el panel de Admin).
 
+### 10.5 — `getVisibleAssignmentsForStudent` filtraba tareas de OTROS alumnos específicos (fuga de IDOR informativo)
+
+Encontrado haciendo una pasada de QA manual completa contra el entorno desplegado en Render (login real como cada rol + llamadas directas a la API con el token de sesión), no por lectura estática del código — por eso no apareció en las pasadas anteriores.
+
+`assignment.service.ts::getVisibleAssignmentsForStudent` construía la visibilidad así: `OR: [{ studentId }, { subjectId: { in: subjectIds } }]`. El segundo término de ese `OR` no filtraba por `studentId` en absoluto, así que cualquier tarea de una materia donde el alumno está inscrito — **incluida una asignada individualmente a OTRO alumno específico** (`Assignment.studentId` apunta a un alumno concreto; ver comentario en `schema.prisma`) — aparecía también en la lista de tareas de todos sus compañeros. Las notas/feedback/archivo de entrega no se filtraban (esos vienen solo del `include: { submissions: { where: { studentId } } }` de la entrega PROPIA del que consulta), pero sí se filtraban: el título y fecha de una tarea ajena, filas duplicadas y confusas con un estado (`PENDING`/`LATE`) derivado incorrectamente (porque nunca va a existir una entrega propia para una tarea que no es tuya), y el `studentId` interno del otro alumno quedaba expuesto en la respuesta JSON.
+
+Como `dashboard.controller.ts` ya reutiliza esta misma función para los conteos de "Actividades Pendientes" de Estudiante y Padre (ver sección 6.4), el bug también inflaba esos números — es probablemente la causa de que el dashboard de un Padre mostrara 52 "actividades pendientes" para un solo hijo.
+
+**Fix aplicado:** el segundo término del `OR` ahora exige explícitamente `studentId: null` (es decir, solo tareas compartidas con toda la materia), dejando intacto el primer término (`{ studentId }`, la tarea es mía). Un alumno ve exactamente: lo que le asignaron a él en particular, más lo que se asignó a toda la materia.
+
 ### Verificación realizada
 
 - `npx tsc --noEmit` limpio en `backend/` y `frontend/` después de **cada** cambio significativo, no solo al final.
 - `grep` exhaustivo, repetido al final de todo, confirmando cero: `@ts-ignore`, `(req as any).user` en controllers, `{ error: }`, `alert(`, `new PrismaClient` duplicado, y referencias a cualquier archivo borrado.
-- Trazado manual de cada endpoint modificado, siguiendo el flujo rol → policy → query de Prisma, para los 4 hallazgos críticos + los 2 nuevos (10.1, 10.4).
+- Trazado manual de cada endpoint modificado, siguiendo el flujo rol → policy → query de Prisma, para los 4 hallazgos críticos + los 3 nuevos (10.1, 10.4, 10.5).
+- Spot-check manual de Exámenes, Calificaciones y Asistencia buscando el mismo patrón (`subjectId: { in } }` sin acompañar de `studentId`) — los tres filtran siempre por `studentId` exacto, no reproducen este bug.
 - **Lo que NO pude verificar:** no tengo acceso de red a tu base de datos de Neon desde este entorno, así que no corrí las rutas contra datos reales ni un server levantado — esto es revisión estática + compilación, no una prueba de integración end-to-end. Tampoco corrí `npm run build` del frontend hasta el final (falló por un problema de binario nativo de Rollup específico de este entorno de ejecución, no relacionado con ningún cambio que hice — `tsc --noEmit`, que es la verificación de tipos real, sí pasó limpio). Si querés que verifiquemos con el servidor realmente corriendo, es el siguiente paso lógico y lo puedo guiar.
 
 ---

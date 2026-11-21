@@ -54,7 +54,20 @@ export async function getVisibleAssignmentsForStudent(studentId: number): Promis
 
   const assignments = await prisma.assignment.findMany({
     where: {
-      OR: [{ studentId }, { subjectId: { in: subjectIds } }],
+      // 🔒 Corregido: antes `subjectId: { in: subjectIds } }` por si solo
+      // hacia visible, para CUALQUIER alumno inscrito en la materia, una
+      // tarea asignada individualmente a OTRO alumno especifico (studentId
+      // != null apunta a un alumno concreto; ver comentario en
+      // schema.prisma). Las notas/adjuntos quedaban a salvo (vienen solo del
+      // include de `submissions` propio), pero el titulo, fecha y el
+      // studentId ajeno si se filtraban (IDOR informativo + filas
+      // duplicadas/confusas en la lista de tareas del alumno).
+      // Ahora: visible solo si es mia (studentId === yo) o es para toda la
+      // materia (studentId === null) y estoy inscrito en ella.
+      OR: [
+        { studentId },
+        { studentId: null, subjectId: { in: subjectIds } },
+      ],
     },
     include: {
       subject: { select: { id: true, name: true } },

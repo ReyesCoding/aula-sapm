@@ -219,7 +219,7 @@ async function main() {
         subjectId: subject.id,
         teacherId: teacher.id,
         showResults: true,
-        dueDate: addDays(now, 10),
+        dueDate: addDays(now, 60), // ventana amplia para que el examen siga "Abierto" en demos futuras
       },
     });
     examCount++;

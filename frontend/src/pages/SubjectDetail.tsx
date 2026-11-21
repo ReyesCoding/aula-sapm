@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getAssignmentsBySubject } from '../services/assignment.service';
-import { getExamsBySubject, toggleExamResults } from '../services/exam.service';
+import { getExamsBySubject, toggleExamResults, updateExam } from '../services/exam.service';
 import { Loader2, ArrowLeft, ArrowRight, Plus, FileText, BrainCircuit, Users, Calendar, Settings, Upload, CheckCircle, Award, ClipboardCheck, MessageCircle, FolderOpen } from 'lucide-react';
 
 // Componentes
@@ -143,6 +143,21 @@ export default function SubjectDetail() {
     } catch (error) {
         const errorObj = error as { response?: { data?: { message?: string } } };
         setExamActionError(errorObj.response?.data?.message || "Error al cambiar la visibilidad");
+    }
+  };
+
+  // Reabrir un examen "Cerrado": empuja su fecha límite 30 días hacia
+  // adelante en vez de obligar al profesor a borrarlo y crearlo de nuevo.
+  const handleReopenExam = async (examId: number) => {
+    setExamActionError(null);
+    const newDueDate = new Date();
+    newDueDate.setDate(newDueDate.getDate() + 30);
+    try {
+        const updated = await updateExam(examId, { dueDate: newDueDate.toISOString() });
+        setExams(prev => prev.map(e => e.id === examId ? { ...e, dueDate: updated.dueDate } : e));
+    } catch (error) {
+        const errorObj = error as { response?: { data?: { message?: string } } };
+        setExamActionError(errorObj.response?.data?.message || "Error al reabrir el examen");
     }
   };
 
@@ -351,6 +366,18 @@ export default function SubjectDetail() {
                                 <span className="font-medium text-xs">Revisión {exam.showResults ? "ON" : "OFF"}</span>
                             </label>
                             <div className="h-6 w-px bg-gray-300 mx-1"></div>
+                            {isExpired && (
+                              <>
+                                <button
+                                    onClick={() => handleReopenExam(exam.id)}
+                                    className="text-purple-600 hover:text-purple-800 font-bold text-sm flex items-center gap-1.5 px-2 py-1 rounded hover:bg-purple-50 transition"
+                                    title="Extiende la fecha límite 30 días y reabre el examen"
+                                >
+                                    <Calendar size={16}/> Reabrir
+                                </button>
+                                <div className="h-6 w-px bg-gray-300 mx-1"></div>
+                              </>
+                            )}
                             <button 
                                 onClick={() => setResultsModalData({ id: exam.id, title: exam.title })}
                                 className="text-blue-600 hover:text-blue-800 font-bold text-sm flex items-center gap-1.5 px-2 py-1 rounded hover:bg-blue-50 transition"

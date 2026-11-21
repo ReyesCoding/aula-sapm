@@ -28,9 +28,14 @@ backend/prisma/dev.db
 backend/prisma/dev.db-journal
 
 # Archivos subidos (Uploads)
-# Queremos la carpeta pero no el contenido, excepto el .gitkeep si existiera
+# Queremos la carpeta pero no el contenido, excepto el .gitkeep y el adjunto
+# demo-entrega.pdf, que usa seed-demo-content.ts como adjunto de ejemplo: se
+# commitea para que viaje con la imagen de Docker (el filesystem de Render es
+# efímero, así que cualquier otro archivo subido en runtime sí se sigue
+# perdiendo en cada redeploy/restart, como corresponde).
 backend/uploads/*
 !backend/uploads/.gitkeep
+!backend/uploads/demo-entrega.pdf
 
 # Basura antigua (por seguridad)
 webcolegio/

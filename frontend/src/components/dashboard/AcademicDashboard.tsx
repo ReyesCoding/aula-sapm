@@ -364,7 +364,13 @@ export function AcademicDashboard() {
       
       <div>
         <h1 className="text-3xl font-bold text-gray-800">Hola, <span className="text-blue-600">{user?.name}</span></h1>
-        <p className="text-gray-500 mt-1">{user?.role === 'TEACHER' ? 'Panel de Gestión Académica' : 'Panel del Estudiante'}</p>
+        <p className="text-gray-500 mt-1">
+          {user?.role === 'TEACHER' ? 'Panel de Gestión Académica'
+            : user?.role === 'PARENT' ? 'Panel del Padre/Madre'
+            : user?.role === 'CENTRO' ? 'Panel de Administración del Centro'
+            : user?.role === 'ADMIN' ? 'Panel de Administración'
+            : 'Panel del Estudiante'}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

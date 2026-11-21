@@ -7,7 +7,8 @@ import {
     getExamById, 
     submitExam, 
     getExamResults, 
-    toggleExamResults // 👈 Antes se llamaba toggleExamVisibility
+    toggleExamResults, // 👈 Antes se llamaba toggleExamVisibility
+    updateExam
 } from '../controllers/exam.controller';
 
 const router = Router();
@@ -26,5 +27,6 @@ router.post('/submit', authorizeRoles([RoleName.STUDENT]), submitExam); // Envia
 // Rutas de Profesor
 router.get('/:id/results', getExamResults); // Ver notas de alumnos
 router.patch('/:id/toggle', toggleExamResults); // Activar/Desactivar revisión
+router.patch('/:id', authorizeRoles([RoleName.TEACHER, RoleName.CENTRO, RoleName.ADMIN]), updateExam); // Editar título/descripción/fecha límite
 
 export default router;
