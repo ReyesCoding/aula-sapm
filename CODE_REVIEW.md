@@ -379,4 +379,96 @@ Rol de solo lectura sobre sus hijos vinculados, nada más:
 
 ---
 
+## 11. Internacionalización (i18n): evaluación de alcance y plan propuesto
+
+Pediste evaluar qué tan factible es ofrecer la app en otro idioma (inglés,
+pensando en que la vea un recruiter de habla inglesa) y propusiste vos
+mismo que fuera un simple selector de idioma en vez de traducir todo el
+contenido, justamente para no tener que tocar la base de datos ni los
+scripts de seed. Después de revisar el alcance real del código, esa es
+también mi recomendación — pero con una distinción importante que vale la
+pena dejar explícita antes de empezar a construir nada, para que la
+decisión final sea tuya y no una sorpresa a mitad de camino.
+
+### Qué SÍ es razonable traducir con un selector de idioma
+
+Todo el texto **estático de la interfaz**, es decir, el que vive en el
+código de React, no en la base de datos: títulos de pantalla, nombres de
+botones ("Guardar", "Cancelar", "Ver Aula"), etiquetas de formularios,
+mensajes de validación, encabezados de tabla, textos de los modales de
+confirmación, el contenido de `InfoDialog`/`ConfirmDialog`, etc. Esto es
+exactamente lo que vos tenías en mente, y técnicamente es sencillo con
+una librería como `react-i18next`: un selector (🇪🇸/🇬🇧) en el Login y en
+el Navbar, un diccionario `es.json`/`en.json` por idioma, y reemplazar
+cada string literal (`"Guardar"`) por una llamada a la función de
+traducción (`t('actions.save')`).
+
+### Qué NO se puede traducir sin tocar la base de datos (el límite real)
+
+El contenido que SÍ vive en la base de datos — nombres de materias
+("Matemáticas"), títulos de tareas ("Ecuaciones de primer grado"),
+anuncios, el cuerpo de los mensajes de chat, las preguntas de examen, los
+posts del foro, los nombres de los eventos de calendario — es texto que
+cargó un profesor/centro real (o, en la demo, que sembramos nosotros) y
+**no se traduce solo con un selector de idioma en el frontend**, porque
+ese texto no existe en dos versiones: existe una sola vez, en español,
+como dato. Un selector de idioma en la UI puede cambiar el idioma de los
+botones alrededor de "Ecuaciones de primer grado", pero no puede
+inventarle una traducción al inglés a esa tarea sin que alguien (un
+profesor, o nosotros en el seed) la escriba en ambos idiomas, o sin pasar
+el texto por un traductor automático en tiempo real (lo cual tiene sus
+propios costos/riesgos y no es gratis).
+
+En otras palabras: con el enfoque que proponés, un recruiter que active
+"English" vería un dashboard, botones y formularios en inglés perfecto,
+pero seguiría viendo "Matemáticas", "Historia" y las tareas en español —
+que para el propósito de portafolio (mostrar que la app funciona y que
+sabés construir software bien hecho) es perfectamente aceptable y es
+exactamente lo que ya esperabas, pero lo aclaro para que quede escrito y
+no sea una sorpresa si alguien pregunta "¿por qué el nombre de la materia
+no cambió de idioma?".
+
+### Plan propuesto (si lo aprobás, lo implemento en la próxima pasada)
+
+1. Instalar `i18next` + `react-i18next` + `i18next-browser-languagedetector`
+   en el frontend (detecta el idioma del navegador como default, pero el
+   selector manual siempre manda y se guarda en `localStorage`).
+2. Crear `frontend/src/i18n/es.json` y `frontend/src/i18n/en.json` con la
+   estructura de claves agrupada por pantalla (`login.*`, `dashboard.*`,
+   `messages.*`, `calendar.*`, `common.*` para botones compartidos como
+   "Guardar"/"Cancelar", etc.).
+3. Agregar el selector de idioma como un botón pequeño en el Login (antes
+   de autenticarse) y en el Navbar/Dashboard (después de autenticarse),
+   reusando el mismo patrón visual que ya tienen los demás botones de
+   acción rápida.
+4. Pasar los 43 archivos `.tsx` del frontend (~8.600 líneas) reemplazando
+   cada string de UI estático por `t('clave')`, archivo por archivo,
+   verificando con `tsc --noEmit` después de cada tanda para no romper
+   nada en el camino. Es mecánico pero extenso — es, con bastante
+   diferencia, la tarea más grande de todo este round de feedback, así
+   que prefiero que la apruebes explícitamente antes de dedicarle el
+   tiempo que requiere, en vez de asumir que "evaluar el alcance" incluía
+   hacerla completa sin preguntarte primero.
+5. El backend NO necesita cambios: los mensajes de error de la API
+   (`"No tienes acceso a esta materia"`, etc.) son pocos y podrían
+   quedar en español siempre (lo normal en estos casos es traducir solo
+   la capa de presentación, no las respuestas de error de un API interno
+   que el usuario final nunca lee en crudo), salvo que prefieras que
+   también se traduzcan — en ese caso habría que mandar el idioma
+   preferido en cada request y duplicar los mensajes en `backend/src/`,
+   lo cual es un esfuerzo aparte.
+
+### Mi recomendación concreta
+
+Avanzar con el plan de arriba tal cual (selector de idioma, solo UI
+estática, contenido de base de datos siempre en español) es la opción
+correcta para tu caso de uso — no cambiaría el enfoque. Lo único que
+te pido confirmar antes de que le dedique el tiempo de pasada completa
+por los 43 archivos es si lo querés para *esta* entrega o si preferís
+que primero termine de verificar/cerrar todo lo demás (sección 12) y
+lo dejemos como una mejora aparte para después de que puedas mostrar la
+app — dado que es, de lejos, la tarea más grande que queda pendiente y
+no es un bug ni una falla de seguridad/lógica/diseño de las que me
+pediste específicamente que cubriera primero.
+
 *Este informe cubre lectura estática del código y verificación de tipos (`tsc --noEmit`). No reemplaza pruebas automatizadas con el servidor corriendo contra una base de datos real, ni un pentest formal.*
