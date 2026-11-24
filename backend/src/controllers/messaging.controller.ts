@@ -310,10 +310,11 @@ export const archiveConversation = asyncHandler(async (req: Request, res: Respon
   res.json(updated);
 });
 
-// GET /api/messages/unread-count  (para el badge del navbar)
-export const getGlobalUnreadCount = asyncHandler(async (req: Request, res: Response) => {
-  const userId = (req as AuthRequest).user!.userId;
-
+// Extraído para reutilizar desde dashboard.controller.ts (stat "Reportes
+// sin leer" de Admin: como Admin solo conversa con Centro — ver
+// messaging.policy.ts — su conteo de no leídos ES, literalmente, la
+// cantidad de reportes/escalamientos pendientes de los centros).
+export async function getUnreadCountForUser(userId: number): Promise<number> {
   const participations = await prisma.conversationParticipant.findMany({
     where: { userId, isArchived: false },
     select: { conversationId: true, lastReadAt: true },
@@ -331,5 +332,12 @@ export const getGlobalUnreadCount = asyncHandler(async (req: Request, res: Respo
     )
   );
 
-  res.json({ count: counts.reduce((a, b) => a + b, 0) });
+  return counts.reduce((a, b) => a + b, 0);
+}
+
+// GET /api/messages/unread-count  (para el badge del navbar)
+export const getGlobalUnreadCount = asyncHandler(async (req: Request, res: Response) => {
+  const userId = (req as AuthRequest).user!.userId;
+  const count = await getUnreadCountForUser(userId);
+  res.json({ count });
 });

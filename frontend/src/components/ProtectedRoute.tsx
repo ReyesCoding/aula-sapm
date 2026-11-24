@@ -1,6 +1,7 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Loader2 } from 'lucide-react';
+import { FloatingActionButton } from './FloatingActionButton';
 
 export const ProtectedRoute = () => {
   const { user, isAuthenticated, loading } = useAuth();
@@ -21,5 +22,10 @@ export const ProtectedRoute = () => {
     return <Navigate to="/login" replace />;
   }
 
-  return <Outlet />;
+  return (
+    <>
+      <Outlet />
+      <FloatingActionButton />
+    </>
+  );
 };

@@ -59,13 +59,20 @@ export function AcademicDashboard() {
   // 6.6: antes el error al aceptar/rechazar una solicitud se mostraba con alert()
   const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
 
+  // Selector de hijo (Padre/Madre con 2+ hijos vinculados) — pedido
+  // explícito: dejar claro de qué hijo son las materias/datos que se
+  // están mostrando. `null` = "todos los hijos" (comportamiento previo).
+  const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const statsRes = await getDashboardStats();
+      const statsRes = await getDashboardStats(user?.role === 'PARENT' ? selectedChildId : undefined);
       setData(statsRes);
 
-      const subjectsRes = await api.get('/subjects');
+      const subjectsRes = await api.get('/subjects', {
+        params: user?.role === 'PARENT' && selectedChildId ? { childId: selectedChildId } : undefined,
+      });
       let mySubjects: Subject[] = subjectsRes.data;
 
       if (user?.role === 'TEACHER') {
@@ -79,7 +86,7 @@ export function AcademicDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, selectedChildId]);
 
   const handleJoinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,6 +134,24 @@ export function AcademicDashboard() {
     const details = data.details || {};
 
     switch (type) {
+        case 'parent_children':
+            setModalTitle('Mis Hijos Vinculados');
+            setModalContent(
+                <div className="space-y-2">
+                    {(details.children ?? []).map((child) => (
+                        <button
+                            key={child.id}
+                            onClick={() => { setSelectedChildId(child.id); setIsModalOpen(false); }}
+                            className="w-full text-left p-3 border rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-2"
+                        >
+                            <Users size={16} className="text-blue-600" /> <span className="font-bold text-gray-700">{child.name}</span>
+                        </button>
+                    ))}
+                    <p className="text-xs text-gray-400 pt-2">Haz clic en un hijo para ver solo sus materias y actividades.</p>
+                </div>
+            );
+            setIsModalOpen(true);
+            break;
         case 'teacher_students':
             setModalTitle('Mis Estudiantes Activos');
             setModalContent(
@@ -376,6 +401,31 @@ export function AcademicDashboard() {
             : 'Panel del Estudiante'}
         </p>
       </div>
+
+      {user?.role === 'PARENT' && (data.details?.children?.length ?? 0) > 1 && (
+        <div className="bg-white border border-gray-100 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <span className="text-sm font-bold text-gray-500 flex items-center gap-2 shrink-0">
+            <Users size={16} className="text-blue-600" /> Viendo a:
+          </span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setSelectedChildId(null)}
+              className={`px-3 py-1.5 rounded-full text-sm font-bold border transition-colors ${selectedChildId === null ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+            >
+              Todos mis hijos
+            </button>
+            {data.details?.children?.map((child) => (
+              <button
+                key={child.id}
+                onClick={() => setSelectedChildId(child.id)}
+                className={`px-3 py-1.5 rounded-full text-sm font-bold border transition-colors ${selectedChildId === child.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+              >
+                {child.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {data.stats.map((stat, idx) => (

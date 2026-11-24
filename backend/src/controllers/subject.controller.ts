@@ -1,14 +1,64 @@
 import { Request, Response } from 'express';
 import prisma from '../prisma/client';
-import { EnrollmentStatus } from '@prisma/client';
+import { EnrollmentStatus, RoleName } from '@prisma/client';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { centerWhere } from '../utils/tenant';
 
 export const getAllSubjects = async (req: Request, res: Response) => {
   try {
-    // v2.0: cada centro solo ve sus propias materias (ADMIN ve todas)
+    const authReq = req as AuthRequest;
+    const actor = authReq.user!;
+
+    // v3.1 (hallazgo nuevo, fuera del reporte original de Bryan): este
+    // endpoint alimenta "Mis Materias" en AcademicDashboard.tsx para
+    // Estudiante y Padre/Madre, pero antes solo filtraba por CENTRO
+    // (centerWhere) — cualquier estudiante veía TODAS las materias de su
+    // centro como si estuviera inscrito en todas ellas, no solo en las
+    // suyas, y un padre/madre veía lo mismo en vez de ver únicamente las
+    // materias de sus hijos. Para Profesor, el filtro por "mis materias"
+    // vivía solo en el frontend (AcademicDashboard.tsx filtraba
+    // client-side) — cualquier profesor podía igual pedirle a la API las
+    // materias de otros profesores de su centro. Ahora cada rol recibe
+    // exactamente lo que le corresponde ver; Centro/Admin (que gestionan,
+    // no "cursan" materias) siguen viendo todas las de su alcance.
+    let where: Record<string, unknown> = { ...centerWhere(authReq) };
+
+    if (actor.role === RoleName.TEACHER) {
+      where = { ...where, teacherId: actor.userId };
+    } else if (actor.role === RoleName.STUDENT) {
+      where = {
+        ...where,
+        enrollments: { some: { studentId: actor.userId, status: EnrollmentStatus.ACTIVE } },
+      };
+    } else if (actor.role === RoleName.PARENT) {
+      const links = await prisma.parentChild.findMany({ where: { parentId: actor.userId }, select: { childId: true } });
+      let childIds = links.map((l) => l.childId);
+
+      // Si el padre/madre tiene 2+ hijos y el frontend pide uno en
+      // concreto (selector de hijo — ver AcademicDashboard.tsx), se
+      // restringe a ese hijo; si no, se muestran las materias de TODOS
+      // sus hijos juntas (comportamiento previo, sigue siendo válido
+      // cuando solo hay un hijo vinculado).
+      const { childId: requestedChildId } = req.query as { childId?: string };
+      if (requestedChildId) {
+        const requested = Number(requestedChildId);
+        if (!childIds.includes(requested)) {
+          res.status(403).json({ message: 'Ese estudiante no está vinculado a tu cuenta.' });
+          return;
+        }
+        childIds = [requested];
+      }
+
+      where = {
+        ...where,
+        enrollments: { some: { studentId: { in: childIds }, status: EnrollmentStatus.ACTIVE } },
+      };
+    }
+    // CENTRO/ADMIN: sin filtro adicional — siguen viendo todas las materias
+    // de su alcance (centerWhere ya restringe a Centro a las de su centro).
+
     const subjects = await prisma.subject.findMany({
-      where: { ...centerWhere(req as AuthRequest) },
+      where,
       orderBy: { name: 'asc' },
       select: {
         id: true,

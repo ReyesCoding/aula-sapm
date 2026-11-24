@@ -3,13 +3,17 @@ import { authenticateToken, authorizeRoles } from '../middlewares/auth.middlewar
 import { 
   getAllUsers, 
   createUser, 
+  updateUser,
   deleteUser, 
   searchUsers, 
   updateUserRole,
   updateProfile,
   linkParentChild,
   unlinkParentChild,
-  getParentChildren
+  getParentChildren,
+  createStudentWithParent,
+  addParentToStudent,
+  getStudentParents
 } from '../controllers/users.controller';
 import { RoleName } from '@prisma/client';
 
@@ -31,15 +35,26 @@ router.get('/search', authenticateToken, authorizeRoles([RoleName.TEACHER, RoleN
 // igual patrón que subject.controller.ts::createSubject).
 router.get('/', authenticateToken, authorizeRoles([RoleName.ADMIN, RoleName.CENTRO]), getAllUsers);
 router.post('/', authenticateToken, authorizeRoles([RoleName.ADMIN, RoleName.CENTRO]), createUser);
+router.patch('/:id', authenticateToken, authorizeRoles([RoleName.ADMIN, RoleName.CENTRO]), updateUser);
 router.delete('/:id', authenticateToken, authorizeRoles([RoleName.ADMIN, RoleName.CENTRO]), deleteUser);
 
+// v3.1: Centro matricula estudiantes y les asigna padre/madre (ver
+// users.controller.ts::createStudentWithParent para el razonamiento).
+router.post('/students-with-parent', authenticateToken, authorizeRoles([RoleName.ADMIN, RoleName.CENTRO]), createStudentWithParent);
+router.get('/:studentId/parents', authenticateToken, authorizeRoles([RoleName.ADMIN, RoleName.CENTRO]), getStudentParents);
+router.post('/:studentId/parents', authenticateToken, authorizeRoles([RoleName.ADMIN, RoleName.CENTRO]), addParentToStudent);
+
+// Listar los hijos de un padre/madre (ParentsManagement.tsx de Centro, y
+// el flujo de vínculo de Admin): Centro queda acotado a su propio centro
+// dentro del controller, igual patrón que el resto de este archivo.
+router.get('/:id/children', authenticateToken, authorizeRoles([RoleName.ADMIN, RoleName.CENTRO]), getParentChildren);
+
 // 3. MURO DE CONTENCIÓN: de aquí para abajo, solo Admin — cambiar el ROL de
-// un usuario (riesgo de escalamiento de privilegios) y vincular padres con
-// hijos siguen siendo exclusivamente operaciones de plataforma.
+// un usuario (riesgo de escalamiento de privilegios) y vincular/desvincular
+// padres con hijos siguen siendo exclusivamente operaciones de plataforma.
 router.use(authenticateToken, authorizeRoles([RoleName.ADMIN]));
 
 router.patch('/:id/role', updateUserRole);
-router.get('/:id/children', getParentChildren);
 router.post('/:id/children', linkParentChild);
 router.delete('/:id/children/:childId', unlinkParentChild);
 

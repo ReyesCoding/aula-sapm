@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Briefcase, UserPlus, Trash2, Loader2, BookOpen, Plus, Mail, X, Save, AlertCircle } from 'lucide-react';
-import { getAllUsers, createUser, deleteUser, type User } from '../../services/user.service';
+import { Briefcase, UserPlus, Trash2, Loader2, BookOpen, Plus, Mail, X, Save, AlertCircle, Pencil } from 'lucide-react';
+import { getAllUsers, createUser, updateUser, deleteUser, type User } from '../../services/user.service';
 import { getSubjects, updateSubject, deleteSubject, type Subject } from '../../services/subject.service';
 import { CreateSubjectModal } from '../CreateSubjectModal';
 import { ConfirmDialog } from '../ConfirmDialog';
@@ -44,6 +44,13 @@ export const TeachersManagement = () => {
   const [confirmDeleteSubject, setConfirmDeleteSubject] = useState<Subject | null>(null);
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  // Edición de profesor (nombre/email/contraseña) — antes solo se podía
+  // crear y borrar, nunca corregir un dato o resetear la contraseña.
+  const [editingTeacher, setEditingTeacher] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', email: '', password: '' });
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -127,6 +134,37 @@ export const TeachersManagement = () => {
 
   const subjectsForTeacher = (teacherId: number) => subjects.filter((s) => (s.teacher?.id ?? s.teacherId) === teacherId);
 
+  const openEditTeacher = (teacher: User) => {
+    setEditingTeacher(teacher);
+    setEditForm({ name: teacher.name, email: teacher.email, password: '' });
+    setEditError(null);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTeacher) return;
+    if (!editForm.name.trim() || !editForm.email.trim()) {
+      setEditError('Nombre y email son obligatorios.');
+      return;
+    }
+    try {
+      setEditSubmitting(true);
+      setEditError(null);
+      await updateUser(editingTeacher.id, {
+        name: editForm.name.trim(),
+        email: editForm.email.trim(),
+        password: editForm.password || undefined,
+      });
+      setEditingTeacher(null);
+      load();
+    } catch (error: unknown) {
+      const errorObj = error as ApiError;
+      setEditError(errorObj.response?.data?.message || 'No se pudo actualizar al profesor.');
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-sm h-full flex flex-col min-h-[500px]">
       {/* Header */}
@@ -182,13 +220,22 @@ export const TeachersManagement = () => {
                       <h3 className="font-bold text-gray-800">{teacher.name}</h3>
                       <p className="text-xs text-gray-500 flex items-center gap-1"><Mail size={12} /> {teacher.email}</p>
                     </div>
-                    <button
-                      onClick={() => { setConfirmError(null); setConfirmDeleteTeacher(teacher); }}
-                      className="text-gray-400 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-full shrink-0"
-                      title="Eliminar profesor"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => openEditTeacher(teacher)}
+                        className="text-gray-400 hover:text-primary transition-colors p-2 hover:bg-blue-50 rounded-full"
+                        title="Editar profesor"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        onClick={() => { setConfirmError(null); setConfirmDeleteTeacher(teacher); }}
+                        className="text-gray-400 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-full"
+                        title="Eliminar profesor"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="mt-3 pt-3 border-t border-gray-100">
@@ -269,6 +316,41 @@ export const TeachersManagement = () => {
               </div>
               <button disabled={submitting} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded mt-2 shadow-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-60">
                 {submitting ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} Guardar Profesor
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Editar Profesor */}
+      {editingTeacher && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="px-6 py-4 bg-gray-800 text-white font-bold text-lg flex justify-between items-center">
+              Editar Profesor
+              <button onClick={() => setEditingTeacher(null)} className="opacity-70 hover:opacity-100"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+              {editError && (
+                <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm font-bold border border-red-100">{editError}</div>
+              )}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Nombre Completo</label>
+                <input type="text" required className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-primary outline-none"
+                  value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Email</label>
+                <input type="email" required className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-primary outline-none"
+                  value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Nueva Contraseña (opcional)</label>
+                <input type="password" className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-primary outline-none"
+                  value={editForm.password} onChange={(e) => setEditForm({ ...editForm, password: e.target.value })} placeholder="Déjalo vacío para no cambiarla" />
+              </div>
+              <button disabled={editSubmitting} className="w-full bg-primary hover:bg-blue-800 text-white font-bold py-3 rounded mt-2 shadow-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-60">
+                {editSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} Guardar Cambios
               </button>
             </form>
           </div>

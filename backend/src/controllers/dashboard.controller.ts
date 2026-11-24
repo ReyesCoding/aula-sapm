@@ -3,6 +3,7 @@ import prisma from '../prisma/client';
 import { RoleName, EnrollmentStatus } from '@prisma/client';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { getVisibleAssignmentsForStudent } from '../services/assignment.service';
+import { getUnreadCountForUser } from './messaging.controller';
 
 export const getDashboardStats = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -15,19 +16,51 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
     // 👑 CASO 1: ADMINISTRADOR
     // =========================================================
     if (role === RoleName.ADMIN) {
-      const [users, subjects, assignments] = await Promise.all([
+      // v3.1 (feedback de producto): antes estas 4 tarjetas eran "Usuarios
+      // Totales / Materias Activas / Actividades / Estado Sistema" — datos
+      // operativos del DÍA A DÍA de una materia, que es justamente lo que
+      // Admin NO opera (eso es trabajo de Centro/Profesor). Admin administra
+      // CENTROS, así que el resumen ahora gira en torno a ellos: cuántos
+      // hay, cuántos están activos, cuántos usuarios tiene la plataforma en
+      // total, y cuántos "reportes" (mensajes) sin leer le han escalado los
+      // centros — este último no es un número inventado: como Admin solo
+      // conversa con Centro (ver messaging.policy.ts), su bandeja de no
+      // leídos ES, literalmente, sus reportes pendientes de los centros.
+      const [centers, totalUsers, usersByRoleRaw, unreadReports] = await Promise.all([
+        prisma.educationalCenter.findMany({
+          orderBy: { name: 'asc' },
+          include: { _count: { select: { users: true, subjects: true } } },
+        }),
         prisma.user.count(),
-        prisma.subject.count(),
-        prisma.assignment.count()
+        prisma.user.groupBy({ by: ['role'], _count: { _all: true } }),
+        getUnreadCountForUser(userId),
       ]);
+
+      const totalCenters = centers.length;
+      const activeCenters = centers.filter((c) => c.isActive).length;
+      const usersByRole = usersByRoleRaw.reduce<Record<string, number>>((acc, row) => {
+        acc[row.role] = row._count._all;
+        return acc;
+      }, {});
 
       res.json({
         stats: [
-          { label: 'Usuarios Totales', value: users, icon: 'users', color: 'blue', type: 'admin_users' },
-          { label: 'Materias Activas', value: subjects, icon: 'book', color: 'green', type: 'admin_courses' },
-          { label: 'Actividades', value: assignments, icon: 'file', color: 'purple', type: 'admin_reports' },
-          { label: 'Estado Sistema', value: 'OK', icon: 'check', color: 'gray', type: 'system_status' }
-        ]
+          { label: 'Centros Educativos', value: totalCenters, icon: 'building', color: 'indigo', type: 'admin_centers' },
+          { label: 'Centros Activos', value: `${activeCenters}/${totalCenters}`, icon: 'check', color: activeCenters === totalCenters && totalCenters > 0 ? 'green' : 'orange', type: 'admin_centers' },
+          { label: 'Usuarios Totales', value: totalUsers, icon: 'users', color: 'blue', type: 'admin_users' },
+          { label: 'Reportes Sin Leer', value: unreadReports, icon: 'alert', color: unreadReports > 0 ? 'red' : 'gray', type: 'admin_reports' },
+        ],
+        details: {
+          centers: centers.map((c) => ({
+            id: c.id,
+            name: c.name,
+            code: c.code,
+            isActive: c.isActive,
+            usersCount: c._count.users,
+            subjectsCount: c._count.subjects,
+          })),
+          usersByRole,
+        },
       });
       return;
     }
@@ -237,20 +270,27 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
     if (role === RoleName.CENTRO) {
       const centerId = authReq.user!.educationalCenterId;
 
-      const [usersCount, subjectsCount, assignmentsCount, pendingEnrollments] = await Promise.all([
+      const [usersCount, subjectsCount, assignmentsCount, pendingEnrollments, usersByRoleRaw] = await Promise.all([
         prisma.user.count({ where: { educationalCenterId: centerId } }),
         prisma.subject.count({ where: { educationalCenterId: centerId } }),
         prisma.assignment.count({ where: { subject: { educationalCenterId: centerId } } }),
         prisma.enrollment.count({ where: { status: EnrollmentStatus.PENDING, subject: { educationalCenterId: centerId } } }),
+        prisma.user.groupBy({ by: ['role'], where: { educationalCenterId: centerId }, _count: { _all: true } }),
       ]);
+
+      const usersByRole = usersByRoleRaw.reduce<Record<string, number>>((acc, row) => {
+        acc[row.role] = row._count._all;
+        return acc;
+      }, {});
 
       res.json({
         stats: [
-          { label: 'Usuarios del Centro', value: usersCount, icon: 'users', color: 'blue' },
-          { label: 'Materias Activas', value: subjectsCount, icon: 'book', color: 'green' },
-          { label: 'Actividades', value: assignmentsCount, icon: 'file', color: 'purple' },
-          { label: 'Solicitudes Pendientes', value: pendingEnrollments, icon: 'alert', color: pendingEnrollments > 0 ? 'orange' : 'gray' },
+          { label: 'Usuarios del Centro', value: usersCount, icon: 'users', color: 'blue', type: 'centro_users' },
+          { label: 'Materias Activas', value: subjectsCount, icon: 'book', color: 'green', type: 'centro_subjects' },
+          { label: 'Actividades', value: assignmentsCount, icon: 'file', color: 'purple', type: 'centro_assignments' },
+          { label: 'Solicitudes Pendientes', value: pendingEnrollments, icon: 'alert', color: pendingEnrollments > 0 ? 'orange' : 'gray', type: 'centro_pending' },
         ],
+        details: { usersByRole },
       });
       return;
     }
@@ -259,8 +299,26 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
     // 👪 CASO 5: PADRE/MADRE
     // =========================================================
     if (role === RoleName.PARENT) {
-      const links = await prisma.parentChild.findMany({ where: { parentId: userId }, select: { childId: true } });
-      const childIds = links.map((l) => l.childId);
+      const links = await prisma.parentChild.findMany({
+        where: { parentId: userId },
+        select: { child: { select: { id: true, name: true } } },
+      });
+      let childIds = links.map((l) => l.child.id);
+      const totalChildrenCount = childIds.length;
+      // v3.1: se agrega el listado de hijos con nombre (antes solo se
+      // contaban) para que el frontend pueda ofrecer un selector de hijo
+      // cuando hay 2+ — pedido explícito: "hacer referencia clara de qué
+      // perfil de hijo estamos viendo". Si el frontend pide un hijo en
+      // concreto (?childId=), las estadísticas (pendientes/promedio) se
+      // acotan a ESE hijo en vez de mezclar a todos.
+      const childrenSummary = links.map((l) => l.child);
+      const { childId: requestedChildId } = req.query as { childId?: string };
+      if (requestedChildId) {
+        const requested = Number(requestedChildId);
+        if (childIds.includes(requested)) {
+          childIds = [requested];
+        }
+      }
 
       if (childIds.length === 0) {
         res.json({
@@ -297,10 +355,11 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
 
       res.json({
         stats: [
-          { label: 'Hijos Vinculados', value: childIds.length, icon: 'users', color: 'blue' },
+          { label: 'Hijos Vinculados', value: totalChildrenCount, icon: 'users', color: 'blue', type: totalChildrenCount > 1 ? 'parent_children' : undefined },
           { label: 'Actividades Pendientes', value: pendingCount, icon: 'clock', color: pendingCount > 0 ? 'orange' : 'green' },
           { label: 'Promedio General', value: averageDisplay, icon: 'award', color: 'purple' },
         ],
+        details: { children: childrenSummary },
       });
       return;
     }
