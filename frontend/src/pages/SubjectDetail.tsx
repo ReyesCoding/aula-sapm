@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getAssignmentsBySubject } from '../services/assignment.service';
 import { getExamsBySubject, toggleExamResults, updateExam } from '../services/exam.service';
 import { Loader2, ArrowLeft, ArrowRight, Plus, FileText, BrainCircuit, Users, Calendar, Settings, Upload, CheckCircle, Award, ClipboardCheck, MessageCircle, FolderOpen } from 'lucide-react';
+import { useConfirmedNavigation } from '../hooks/useConfirmedNavigation';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 // Componentes
 import { CreateExamModal } from '../components/CreateExamModal';
@@ -59,7 +61,7 @@ interface TaskToEdit {
 export default function SubjectDetail() {
   const { id } = useParams();
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const { go, isConfirmOpen, confirmGo, cancelGo } = useConfirmedNavigation();
   const location = useLocation();
   
   const [activeTab, setActiveTab] = useState<'assignments' | 'exams' | 'grades' | 'attendance' | 'forum' | 'documents'>('assignments');
@@ -167,7 +169,7 @@ export default function SubjectDetail() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-5xl mx-auto">
         
-        <button onClick={() => navigate('/dashboard')} className="flex items-center text-gray-500 hover:text-blue-600 mb-6 transition">
+        <button onClick={() => go('/dashboard')} className="flex items-center text-gray-500 hover:text-blue-600 mb-6 transition">
           <ArrowLeft size={20} className="mr-2"/> Volver al Dashboard
         </button>
 
@@ -484,6 +486,17 @@ export default function SubjectDetail() {
         )}
 
       </div>
+
+      <ConfirmDialog
+        isOpen={isConfirmOpen}
+        danger={false}
+        title="¿Volver al Dashboard?"
+        message="Tienes cambios sin guardar en esta página. Si continúas, se perderán."
+        confirmLabel="Sí, volver"
+        cancelLabel="Seguir aquí"
+        onConfirm={confirmGo}
+        onCancel={cancelGo}
+      />
     </div>
   );
 }

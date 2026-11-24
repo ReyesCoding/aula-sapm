@@ -11,6 +11,7 @@ import {
   type SubjectAverageResult,
 } from '../services/grades.service';
 import { CreateEvaluationModal } from './CreateEvaluationModal';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface GradesPanelProps {
   subjectId: number;
@@ -71,16 +72,24 @@ export const GradesPanel = ({ subjectId }: GradesPanelProps) => {
     loadData();
   }, [loadData]);
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('¿Eliminar esta calificación?')) return;
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [confirmDeleteTitle, setConfirmDeleteTitle] = useState<string>('');
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+
+  const confirmHandleDelete = async () => {
+    if (confirmDeleteId == null) return;
+    setConfirmSubmitting(true);
     setDeleteError(null);
     try {
-      await deleteEvaluation(id);
+      await deleteEvaluation(confirmDeleteId);
+      setConfirmDeleteId(null);
       loadData();
     } catch (error) {
       console.error('Error eliminando calificación:', error);
       const errorObj = error as { response?: { data?: { message?: string } } };
       setDeleteError(errorObj.response?.data?.message || 'Error al eliminar la calificación.');
+    } finally {
+      setConfirmSubmitting(false);
     }
   };
 
@@ -199,7 +208,7 @@ export const GradesPanel = ({ subjectId }: GradesPanelProps) => {
                         <span className="text-gray-700 font-medium">{ev.title} <span className="text-gray-400">(peso {ev.weight})</span></span>
                         <div className="flex items-center gap-3">
                           <span className="font-bold text-gray-800">{ev.score}</span>
-                          <button onClick={() => handleDelete(ev.id)} className="text-gray-400 hover:text-red-600 transition" title="Eliminar">
+                          <button onClick={() => { setConfirmDeleteId(ev.id); setConfirmDeleteTitle(ev.title); }} className="text-gray-400 hover:text-red-600 transition" title="Eliminar">
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -218,6 +227,15 @@ export const GradesPanel = ({ subjectId }: GradesPanelProps) => {
         onClose={() => setIsModalOpen(false)}
         subjectId={subjectId}
         onSuccess={loadData}
+      />
+
+      <ConfirmDialog
+        isOpen={confirmDeleteId != null}
+        title="¿Eliminar calificación?"
+        message={`Esta acción no se puede deshacer: se eliminará "${confirmDeleteTitle}".`}
+        loading={confirmSubmitting}
+        onConfirm={confirmHandleDelete}
+        onCancel={() => setConfirmDeleteId(null)}
       />
     </div>
   );

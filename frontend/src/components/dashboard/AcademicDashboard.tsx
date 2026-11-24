@@ -8,6 +8,7 @@ import {
   ExternalLink, ArrowRight, X, Mail, PartyPopper, Plus, KeyRound, Loader2, UserCheck, UserX
 } from 'lucide-react';
 import { CreateSubjectModal } from '../CreateSubjectModal';
+import { InfoDialog } from '../InfoDialog';
 import { joinSubjectByCode, manageSubjectEnrollment } from '../../services/subject.service';
 import { getDashboardStats } from '../../services/dashboard.service';
 // 6.4 (antes corregido): este archivo declaraba su PROPIA copia local de
@@ -53,6 +54,7 @@ export function AcademicDashboard() {
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joinSuccess, setJoinSuccess] = useState<string | null>(null);
+  const [joinResultOpen, setJoinResultOpen] = useState(false);
   const [processingEnrollmentId, setProcessingEnrollmentId] = useState<number | null>(null);
   // 6.6: antes el error al aceptar/rechazar una solicitud se mostraba con alert()
   const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
@@ -88,11 +90,13 @@ export function AcademicDashboard() {
       setJoinSuccess(null);
       const result = await joinSubjectByCode(joinCode.trim().toUpperCase());
       setJoinSuccess(result.message);
+      setJoinResultOpen(true);
       setJoinCode('');
       fetchData();
     } catch (err: unknown) {
       const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
       setJoinError(errorObj.response?.data?.message || errorObj.message || 'No se pudo procesar el código.');
+      setJoinResultOpen(true);
     } finally {
       setJoining(false);
     }
@@ -428,10 +432,17 @@ export function AcademicDashboard() {
             >
               {joining ? <Loader2 size={16} className="animate-spin" /> : null} Unirme
             </button>
-            {joinError && <p className="text-xs text-red-600 font-medium sm:ml-2">{joinError}</p>}
-            {joinSuccess && <p className="text-xs text-green-600 font-medium sm:ml-2">{joinSuccess}</p>}
+
           </form>
         )}
+
+        <InfoDialog
+          isOpen={joinResultOpen}
+          variant={joinError ? 'error' : 'success'}
+          title={joinError ? 'No se pudo unir a la materia' : '¡Solicitud enviada!'}
+          message={joinError || joinSuccess || ''}
+          onClose={() => setJoinResultOpen(false)}
+        />
 
         {courses.length === 0 ? (
              <div className="bg-white rounded-xl p-12 text-center border-2 border-dashed border-gray-200">

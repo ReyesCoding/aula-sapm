@@ -50,7 +50,7 @@ export const Navbar = () => {
               <GraduationCap size={24} />
             </div>
             <span className="font-bold text-xl tracking-tight">
-              Aula System
+              AulaSapm
             </span>
           </div>
 

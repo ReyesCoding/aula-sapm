@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { updateProfile } from '../services/user.service';
-import { User, Shield, Key, Save, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
+import { User, Shield, Key, Save, Loader2, CheckCircle, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { useConfirmedNavigation } from '../hooks/useConfirmedNavigation';
+import { useDirtyState } from '../context/DirtyStateContext';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 export const Profile = () => {
   // 1. CORRECCIÓN: Quitamos 'login' que no se usaba
@@ -14,6 +17,17 @@ export const Profile = () => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const { go, isConfirmOpen, confirmGo, cancelGo } = useConfirmedNavigation();
+  const { setDirty } = useDirtyState();
+
+  // Hay cambios sin guardar si el nombre difiere del original, o si el
+  // usuario empezó a llenar cualquiera de los campos de contraseña.
+  useEffect(() => {
+    const nameChanged = name !== (user?.name || '');
+    const touchingPassword = Boolean(currentPassword || newPassword || confirmPassword);
+    setDirty(nameChanged || touchingPassword);
+  }, [name, currentPassword, newPassword, confirmPassword, user?.name, setDirty]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,12 +59,14 @@ export const Profile = () => {
 
        if (newPassword) {
     setSuccess("Contraseña actualizada. Cerrando sesión por seguridad...");
+    setDirty(false);
     setTimeout(() => {
         logout();
     }, 2000);
     return;
     }
         setSuccess("Perfil actualizado correctamente.");
+        setDirty(false);
         // Nota: El cambio de nombre se reflejará al recargar la página o volver a iniciar sesión
         
     } catch (err: unknown) { // 3. CORRECCIÓN: Usamos 'unknown' en lugar de 'any'
@@ -66,6 +82,10 @@ export const Profile = () => {
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
       
+      <button onClick={() => go('/dashboard')} className="flex items-center text-gray-500 hover:text-primary mb-6 transition">
+        <ArrowLeft size={20} className="mr-2" /> Volver al Dashboard
+      </button>
+
       {/* Encabezado */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
@@ -190,6 +210,17 @@ export const Profile = () => {
             </form>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={isConfirmOpen}
+        danger={false}
+        title="¿Volver al Dashboard?"
+        message="Tienes cambios sin guardar en tu perfil. Si continúas, se perderán."
+        confirmLabel="Sí, volver"
+        cancelLabel="Seguir aquí"
+        onConfirm={confirmGo}
+        onCancel={cancelGo}
+      />
     </div>
   );
 };

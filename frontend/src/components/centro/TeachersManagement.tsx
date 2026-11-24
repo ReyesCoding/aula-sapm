@@ -3,6 +3,7 @@ import { Briefcase, UserPlus, Trash2, Loader2, BookOpen, Plus, Mail, X, Save, Al
 import { getAllUsers, createUser, deleteUser, type User } from '../../services/user.service';
 import { getSubjects, updateSubject, deleteSubject, type Subject } from '../../services/subject.service';
 import { CreateSubjectModal } from '../CreateSubjectModal';
+import { ConfirmDialog } from '../ConfirmDialog';
 
 interface ApiError {
   response?: { data?: { message?: string } };
@@ -38,6 +39,11 @@ export const TeachersManagement = () => {
   const [form, setForm] = useState({ name: '', email: '', password: '' });
 
   const [showCreateSubject, setShowCreateSubject] = useState(false);
+
+  const [confirmDeleteTeacher, setConfirmDeleteTeacher] = useState<User | null>(null);
+  const [confirmDeleteSubject, setConfirmDeleteSubject] = useState<Subject | null>(null);
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -76,27 +82,35 @@ export const TeachersManagement = () => {
     }
   };
 
-  const handleDeleteTeacher = async (id: number) => {
-    if (!confirm('¿Eliminar a este profesor? Esta acción no se puede deshacer.')) return;
-    setListError(null);
+  const confirmHandleDeleteTeacher = async () => {
+    if (!confirmDeleteTeacher) return;
+    setConfirmSubmitting(true);
+    setConfirmError(null);
     try {
-      await deleteUser(id);
+      await deleteUser(confirmDeleteTeacher.id);
+      setConfirmDeleteTeacher(null);
       load();
     } catch (error: unknown) {
       const errorObj = error as ApiError;
-      setListError(errorObj.response?.data?.message || 'No se pudo eliminar al profesor.');
+      setConfirmError(errorObj.response?.data?.message || 'No se pudo eliminar al profesor.');
+    } finally {
+      setConfirmSubmitting(false);
     }
   };
 
-  const handleDeleteSubject = async (id: number) => {
-    if (!confirm('¿Eliminar esta materia? Esta acción no se puede deshacer.')) return;
-    setListError(null);
+  const confirmHandleDeleteSubject = async () => {
+    if (!confirmDeleteSubject) return;
+    setConfirmSubmitting(true);
+    setConfirmError(null);
     try {
-      await deleteSubject(id);
+      await deleteSubject(confirmDeleteSubject.id);
+      setConfirmDeleteSubject(null);
       load();
     } catch (error: unknown) {
       const errorObj = error as ApiError;
-      setListError(errorObj.response?.data?.message || 'No se pudo eliminar la materia.');
+      setConfirmError(errorObj.response?.data?.message || 'No se pudo eliminar la materia.');
+    } finally {
+      setConfirmSubmitting(false);
     }
   };
 
@@ -169,7 +183,7 @@ export const TeachersManagement = () => {
                       <p className="text-xs text-gray-500 flex items-center gap-1"><Mail size={12} /> {teacher.email}</p>
                     </div>
                     <button
-                      onClick={() => handleDeleteTeacher(teacher.id)}
+                      onClick={() => { setConfirmError(null); setConfirmDeleteTeacher(teacher); }}
                       className="text-gray-400 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-full shrink-0"
                       title="Eliminar profesor"
                     >
@@ -207,7 +221,7 @@ export const TeachersManagement = () => {
                                 ))}
                               </select>
                               <button
-                                onClick={() => handleDeleteSubject(subject.id)}
+                                onClick={() => { setConfirmError(null); setConfirmDeleteSubject(subject); }}
                                 className="text-gray-400 hover:text-red-500 transition-colors p-1.5 hover:bg-red-50 rounded-full"
                                 title="Eliminar materia"
                               >
@@ -262,6 +276,25 @@ export const TeachersManagement = () => {
       )}
 
       <CreateSubjectModal isOpen={showCreateSubject} onClose={() => setShowCreateSubject(false)} onCreated={load} />
+
+      <ConfirmDialog
+        isOpen={confirmDeleteTeacher != null}
+        title="¿Eliminar profesor?"
+        message={`Esta acción no se puede deshacer${confirmDeleteTeacher ? `: se eliminará la cuenta de ${confirmDeleteTeacher.name}` : ''}. Si tiene materias asignadas, reasígnalas primero.`}
+        loading={confirmSubmitting}
+        error={confirmError}
+        onConfirm={confirmHandleDeleteTeacher}
+        onCancel={() => { setConfirmDeleteTeacher(null); setConfirmError(null); }}
+      />
+      <ConfirmDialog
+        isOpen={confirmDeleteSubject != null}
+        title="¿Eliminar materia?"
+        message={`Esta acción no se puede deshacer${confirmDeleteSubject ? `: se eliminará "${confirmDeleteSubject.name}"` : ''}. Si tiene tareas, exámenes o inscripciones, no se podrá eliminar.`}
+        loading={confirmSubmitting}
+        error={confirmError}
+        onConfirm={confirmHandleDeleteSubject}
+        onCancel={() => { setConfirmDeleteSubject(null); setConfirmError(null); }}
+      />
     </div>
   );
 };

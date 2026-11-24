@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { login as loginService } from '../services/auth.service';
@@ -51,6 +51,27 @@ export const Login = () => {
   const { login } = useAuth();
 
   const [demoLoadingRole, setDemoLoadingRole] = useState<string | null>(null);
+
+  // 👇 El backend vive en el plan gratuito de Render: si nadie lo visita
+  // en ~15 min, el servicio "duerme" y la primera petición que lo
+  // despierta puede tardar hasta medio minuto. Sin este aviso, ese primer
+  // login se ve simplemente roto/colgado. Si tras unos segundos seguimos
+  // esperando, mostramos un mensaje que explica qué está pasando.
+  const [showColdStartHint, setShowColdStartHint] = useState(false);
+  const coldStartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const anyLoading = isLoading || demoLoadingRole !== null;
+    if (anyLoading) {
+      coldStartTimer.current = setTimeout(() => setShowColdStartHint(true), 4000);
+    } else {
+      if (coldStartTimer.current) clearTimeout(coldStartTimer.current);
+      setShowColdStartHint(false);
+    }
+    return () => {
+      if (coldStartTimer.current) clearTimeout(coldStartTimer.current);
+    };
+  }, [isLoading, demoLoadingRole]);
 
   const performLogin = async (loginEmail: string, loginPassword: string) => {
     setError('');
@@ -106,6 +127,13 @@ export const Login = () => {
           </div>
         )}
 
+        {showColdStartHint && (
+          <div className="bg-blue-50 text-blue-700 p-3 rounded-lg flex items-center gap-2 text-xs font-medium mb-6 border border-blue-100 animate-in fade-in">
+            <Loader2 size={16} className="animate-spin shrink-0" />
+            El servidor está despertando (plan gratuito). Puede tardar hasta 50 segundos la primera vez — gracias por tu paciencia.
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1">Correo Electrónico</label>
@@ -147,7 +175,7 @@ export const Login = () => {
         </form>
 
         <div className="mt-6 text-center text-xs text-gray-400">
-          Versión 1.0 &copy; 2025 AulaSystem
+          Versión 1.0 &copy; 2025 AulaSapm
         </div>
       </div>
 

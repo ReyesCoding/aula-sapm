@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X, Loader2, AlertCircle, Trash2 } from 'lucide-react';
+import { ConfirmDialog } from './ConfirmDialog';
 import { useAuth } from '../context/AuthContext';
 import { getSubjects, type Subject } from '../services/subject.service';
 import {
@@ -138,17 +139,25 @@ export const EventModal = ({ isOpen, onClose, onSaved, defaultDate, event }: Eve
     }
   };
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   const handleDelete = async () => {
     if (!event) return;
-    if (!confirm('¿Eliminar este evento?')) return;
+    setConfirmDelete(true);
+  };
+
+  const confirmHandleDelete = async () => {
+    if (!event) return;
     try {
       setDeleting(true);
       await deleteEvent(event.id);
+      setConfirmDelete(false);
       onSaved();
       onClose();
     } catch (err: unknown) {
       const errorObj = err as ApiError;
       setError(errorObj.response?.data?.message || errorObj.message || 'Error al eliminar el evento.');
+      setConfirmDelete(false);
     } finally {
       setDeleting(false);
     }
@@ -294,6 +303,15 @@ export const EventModal = ({ isOpen, onClose, onSaved, defaultDate, event }: Eve
           </div>
         </form>
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmDelete}
+        title="¿Eliminar evento?"
+        message={`Esta acción no se puede deshacer${event ? `: se eliminará "${event.title}"` : ''}.`}
+        loading={deleting}
+        onConfirm={confirmHandleDelete}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </div>
   );
 };

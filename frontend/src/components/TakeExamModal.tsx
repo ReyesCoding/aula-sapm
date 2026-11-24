@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { X, Clock, AlertCircle, Loader2, Check, XCircle } from 'lucide-react'; // ✅ XCircle se usa ahora
 import { getExamById, submitExamResponses } from '../services/exam.service';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface Props {
   isOpen: boolean;
@@ -70,12 +71,14 @@ export const TakeExamModal = ({
     }
   }, [examId, isReviewMode, initialScore]);
 
+  const [confirmIncomplete, setConfirmIncomplete] = useState(false);
+
   const handleSubmit = useCallback(async (isAutoSubmit = false) => {
     if (!exam) return;
 
     if (!isAutoSubmit && Object.keys(answers).length < exam.questions.length) {
-      const confirm = window.confirm("No has respondido todas las preguntas. ¿Seguro que quieres enviar?");
-      if (!confirm) return;
+      setConfirmIncomplete(true);
+      return;
     }
 
     setSubmitting(true);
@@ -325,6 +328,18 @@ export const TakeExamModal = ({
         )}
 
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmIncomplete}
+        danger={false}
+        title="¿Enviar de todas formas?"
+        message={`No has respondido todas las preguntas (${exam ? Object.keys(answers).length : 0} de ${exam?.questions.length ?? 0}). Una vez enviado no podrás cambiar tus respuestas.`}
+        confirmLabel="Enviar de todas formas"
+        cancelLabel="Seguir respondiendo"
+        loading={submitting}
+        onConfirm={() => { setConfirmIncomplete(false); handleSubmit(true); }}
+        onCancel={() => setConfirmIncomplete(false)}
+      />
     </div>
   );
 };

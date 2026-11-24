@@ -37,7 +37,7 @@ export const TaskManagementModal = ({ isOpen, onClose, assignmentId, onTaskUpdat
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [details, setDetails] = useState<AssignmentDetails | null>(null);
   const [loading, setLoading] = useState(true);
-  const [grades, setGrades] = useState<Record<number, number>>({});
+  const [grades, setGrades] = useState<Record<number, number | undefined>>({});
   // 6.3: antes el feedback se guardaba siempre como el texto fijo "Calificado.",
   // sin dar al profesor forma de escribir una devolución real al estudiante.
   const [feedbacks, setFeedbacks] = useState<Record<number, string>>({});
@@ -108,12 +108,25 @@ export const TaskManagementModal = ({ isOpen, onClose, assignmentId, onTaskUpdat
   };
 
   const handleGrade = async (submissionId: number) => {
+    setGradeSuccessId(null);
     const grade = grades[submissionId];
-    if (grade === undefined) return;
+
+    // 🐛 FIX: antes, si el profesor nunca tocaba el campo de nota (típico
+    // cuando solo quiere escribir feedback), `grade` quedaba `undefined` y
+    // la función simplemente hacía `return` sin avisar nada — el feedback
+    // se perdía en silencio y parecía que el botón "Guardar" no hacía nada.
+    // Ahora se valida explícitamente y se explica qué falta.
+    if (grade === undefined || grade === null || Number.isNaN(grade)) {
+      setGradeError('Ingresa una calificación (0-100) antes de guardar. El feedback por sí solo no se puede guardar sin una nota.');
+      return;
+    }
+    if (grade < 0 || grade > 100) {
+      setGradeError('La calificación debe ser un número entre 0 y 100.');
+      return;
+    }
 
     setSavingId(submissionId);
     setGradeError(null);
-    setGradeSuccessId(null);
     try {
         const feedback = feedbacks[submissionId] ?? '';
         await api.patch(`/assignments/${submissionId}/grade`, { grade, feedback });
@@ -228,10 +241,15 @@ export const TaskManagementModal = ({ isOpen, onClose, assignmentId, onTaskUpdat
                                                 <div className="flex items-center gap-2">
                                                     <input 
                                                         type="number" 
-                                                        placeholder={sub.grade?.toString() || "0"}
-                                                        className="w-16 border border-gray-300 rounded-lg p-2 text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none"
-                                                        onChange={(e) => setGrades({...grades, [sub.id]: Number(e.target.value)})}
-                                                        defaultValue={sub.grade ?? ""}
+                                                        min={0}
+                                                        max={100}
+                                                        placeholder="0-100"
+                                                        className={`w-16 border rounded-lg p-2 text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none ${grades[sub.id] === undefined && gradeError ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+                                                        value={grades[sub.id] ?? ''}
+                                                        onChange={(e) => {
+                                                          const raw = e.target.value;
+                                                          setGrades({ ...grades, [sub.id]: raw === '' ? undefined : Number(raw) });
+                                                        }}
                                                     />
                                                     <span className="text-gray-400 text-sm font-medium">/ 100</span>
                                                     <button 

@@ -19,7 +19,7 @@ async function main() {
 
   // 2. Centro educativo por defecto (v2.0 multi-centro)
   const center = await prisma.educationalCenter.create({
-    data: { name: 'Centro Legacy', code: 'legacy' },
+    data: { name: 'Centro Horizonte', code: 'horizonte' },
   });
   console.log('🏫 Centro educativo creado.');
 
@@ -50,7 +50,7 @@ async function main() {
 
   const teacher = await prisma.user.create({
     data: {
-      name: 'Profe. Javascript',
+      name: 'Lic. Juan Pérez',
       email: 'teacher@aula.com',
       password: passwordHash,
       role: RoleName.TEACHER,
@@ -60,7 +60,7 @@ async function main() {
 
   const student = await prisma.user.create({
     data: {
-      name: 'Pepito Estudiante',
+      name: 'Pedro Jiménez',
       email: 'student@aula.com',
       password: passwordHash,
       role: RoleName.STUDENT,
@@ -70,7 +70,7 @@ async function main() {
 
   await prisma.user.create({
     data: {
-      name: 'Sr. Padre',
+      name: 'Roberto Jiménez',
       email: 'parent@aula.com',
       password: passwordHash,
       role: RoleName.PARENT,

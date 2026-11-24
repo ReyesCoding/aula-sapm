@@ -1,7 +1,7 @@
 /**
  * Backfill multi-centro (v2.0, PR1).
  * Ejecutar UNA VEZ, después de `npx prisma migrate dev`, contra la base de
- * datos real (no la de seed): crea "Centro Legacy" y asigna a él a todo
+ * datos real (no la de seed): crea "Centro Horizonte" y asigna a él a todo
  * usuario (no ADMIN) y materia que hoy no tiene educationalCenterId.
  * Es idempotente: correrlo dos veces no duplica nada ni rompe datos.
  *
@@ -14,25 +14,25 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🔧 Backfill multi-centro: iniciando...');
 
-  let center = await prisma.educationalCenter.findUnique({ where: { code: 'legacy' } });
+  let center = await prisma.educationalCenter.findUnique({ where: { code: 'horizonte' } });
   if (!center) {
-    center = await prisma.educationalCenter.create({ data: { name: 'Centro Legacy', code: 'legacy' } });
-    console.log('🏫 Centro Legacy creado.');
+    center = await prisma.educationalCenter.create({ data: { name: 'Centro Horizonte', code: 'horizonte' } });
+    console.log('🏫 Centro Horizonte creado.');
   } else {
-    console.log('🏫 Centro Legacy ya existía, se reutiliza.');
+    console.log('🏫 Centro Horizonte ya existía, se reutiliza.');
   }
 
   const usersResult = await prisma.user.updateMany({
     where: { educationalCenterId: null, role: { not: RoleName.ADMIN } },
     data: { educationalCenterId: center.id },
   });
-  console.log(`👤 ${usersResult.count} usuario(s) asignado(s) a Centro Legacy.`);
+  console.log(`👤 ${usersResult.count} usuario(s) asignado(s) a Centro Horizonte.`);
 
   const subjectsResult = await prisma.subject.updateMany({
     where: { educationalCenterId: null },
     data: { educationalCenterId: center.id },
   });
-  console.log(`📚 ${subjectsResult.count} materia(s) asignada(s) a Centro Legacy.`);
+  console.log(`📚 ${subjectsResult.count} materia(s) asignada(s) a Centro Horizonte.`);
 
   console.log('✅ Backfill completado. Cuando confirmes que todo quedó asignado, puedes volver');
   console.log('   Subject.educationalCenterId NOT NULL en schema.prisma y correr otra migración.');

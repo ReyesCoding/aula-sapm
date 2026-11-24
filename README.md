@@ -75,9 +75,9 @@ Datos de ejemplo (sin información real) sembrados por `prisma/seed.ts` y `prism
 | Rol | Email | Contraseña (Demo) | Alcance |
 | :--- | :--- | :--- | :--- |
 | **Admin** | `admin@aula.com` | `123456` | Plataforma completa, todos los centros |
-| **Centro** | `centro@aula.com` | `123456` | Administración de "Centro Legacy" |
+| **Centro** | `centro@aula.com` | `123456` | Administración de "Centro Horizonte" |
 | **Profesor** | `teacher@aula.com` | `123456` | Materias, tareas, exámenes, calificaciones |
-| **Estudiante** | `student@aula.com` | `123456` | Vista de alumno (Pepito Estudiante) |
+| **Estudiante** | `student@aula.com` | `123456` | Vista de alumno (Pedro Jiménez) |
 | **Padre/Madre** | `parent@aula.com` | `123456` | Vista de seguimiento de su hijo vinculado |
 
 Hay 4 estudiantes adicionales (`maria@aula.com`, `carlos@aula.com`, `sofia@aula.com`, `diego@aula.com`, todos con contraseña `123456`) si quieres ver el sistema con más de un alumno inscrito a la vez.
