@@ -1,0 +1,28 @@
+name: Keep Render backend awake
+
+# El plan gratuito de Render "duerme" un Web Service tras ~15 minutos sin
+# trafico; la primera peticion que lo despierta puede tardar hasta ~50s,
+# lo que hace ver el primer login como roto/colgado (ver aviso en Login.tsx).
+# Este workflow pinga el health check del backend cada 10 minutos para que
+# nunca llegue a dormirse.
+#
+# Para activarlo:
+#   1. Mueve/renombra este archivo a .github/workflows/keep-alive.yml
+#   2. Settings -> Secrets and variables -> Actions -> Variables ->
+#      New repository variable: RENDER_BACKEND_URL = https://<tu-backend>.onrender.com
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          if [ -z "${{ vars.RENDER_BACKEND_URL }}" ]; then
+            echo "Falta configurar la variable de repo RENDER_BACKEND_URL."
+            exit 0
+          fi
+          curl -fsS "${{ vars.RENDER_BACKEND_URL }}/api/health" && echo "Backend despierto." || echo "Ping fallo (puede ser normal durante un deploy)."

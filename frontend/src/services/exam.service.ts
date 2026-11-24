@@ -84,3 +84,16 @@ export const toggleExamResults = async (examId: number) => {
   const response = await api.patch(`/exams/${examId}/toggle`); // Antes: /toggle-visibility
   return response.data; 
 };
+// Editar examen (título / descripción / fecha límite). Útil sobre todo para
+// reabrir un examen cuya fecha límite ya pasó, sin tener que borrarlo y
+// volver a crearlo desde cero.
+export interface UpdateExamDTO {
+  title?: string;
+  description?: string;
+  dueDate?: string;
+}
+
+export const updateExam = async (examId: number, data: UpdateExamDTO) => {
+  const response = await api.patch(`/exams/${examId}`, data);
+  return response.data;
+};

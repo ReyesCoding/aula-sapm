@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { X, Send, Loader2, Pin, Lock, Unlock, Trash2 } from 'lucide-react';
+import { ConfirmDialog } from './ConfirmDialog';
 import { useAuth } from '../context/AuthContext';
 import {
   getThread,
@@ -60,15 +61,22 @@ export const ThreadDetailModal = ({ isOpen, onClose, threadId, onThreadUpdated }
     }
   };
 
-  const handleDeletePost = async (postId: number) => {
-    if (!confirm('¿Eliminar este mensaje?')) return;
+  const [confirmDeletePostId, setConfirmDeletePostId] = useState<number | null>(null);
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+
+  const confirmHandleDeletePost = async () => {
+    if (confirmDeletePostId == null) return;
     setActionError(null);
+    setConfirmSubmitting(true);
     try {
-      await deletePost(postId);
+      await deletePost(confirmDeletePostId);
+      setConfirmDeletePostId(null);
       await load();
     } catch (error) {
       const errorObj = error as { response?: { data?: { message?: string } } };
       setActionError(errorObj.response?.data?.message || 'Error al eliminar el mensaje.');
+    } finally {
+      setConfirmSubmitting(false);
     }
   };
 
@@ -159,7 +167,7 @@ export const ThreadDetailModal = ({ isOpen, onClose, threadId, onThreadUpdated }
                             </span>
                           </p>
                           {canDelete && (
-                            <button onClick={() => handleDeletePost(post.id)} className="text-gray-400 hover:text-red-600 transition" title="Eliminar">
+                            <button onClick={() => setConfirmDeletePostId(post.id)} className="text-gray-400 hover:text-red-600 transition" title="Eliminar">
                               <Trash2 size={14} />
                             </button>
                           )}
@@ -194,6 +202,15 @@ export const ThreadDetailModal = ({ isOpen, onClose, threadId, onThreadUpdated }
           </form>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmDeletePostId != null}
+        title="¿Eliminar mensaje?"
+        message="Esta acción no se puede deshacer."
+        loading={confirmSubmitting}
+        onConfirm={confirmHandleDeletePost}
+        onCancel={() => setConfirmDeletePostId(null)}
+      />
     </div>
   );
 };

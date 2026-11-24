@@ -15,10 +15,19 @@ export interface GradeActor {
   educationalCenterId: number | null;
 }
 
-/** ¿Puede crear/editar/borrar evaluaciones manuales en esta materia? */
+/**
+ * ¿Puede crear/editar/borrar evaluaciones manuales en esta materia?
+ *
+ * v3.0 (nov. 2026): Centro YA NO califica ni gestiona nada académico de una
+ * materia — su rol es administrar al profesorado, no operar las clases.
+ * Calificar es exclusivo del profesor titular (o Admin, como soporte de
+ * plataforma, igual que puede intervenir en cualquier otro recurso). Centro
+ * conserva acceso de SOLO LECTURA a las calificaciones de sus estudiantes
+ * (ver assertCanViewStudentGrades más abajo) para supervisión, pero no
+ * puede crearlas/editarlas.
+ */
 export function canGradeSubject(actor: GradeActor, subject: Subject): boolean {
   if (actor.role === RoleName.ADMIN) return true;
-  if (actor.role === RoleName.CENTRO) return subject.educationalCenterId === actor.educationalCenterId;
   if (actor.role === RoleName.TEACHER) return subject.teacherId === actor.userId;
   return false;
 }

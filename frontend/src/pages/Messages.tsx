@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useConfirmedNavigation } from '../hooks/useConfirmedNavigation';
+import { useDirtyState } from '../context/DirtyStateContext';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ArrowLeft, Plus, Send, Loader2, Paperclip, X, MessageSquare } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE_URL } from '../config';
 import {
   getConversations,
   getConversation,
@@ -22,7 +25,8 @@ const roleLabel: Record<string, string> = {
 
 export default function Messages() {
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const { go, isConfirmOpen, confirmGo, cancelGo } = useConfirmedNavigation();
+  const { setDirty } = useDirtyState();
 
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -33,6 +37,13 @@ export default function Messages() {
 
   const [draft, setDraft] = useState('');
   const [draftFile, setDraftFile] = useState<File | null>(null);
+
+  // Si el usuario está a medio escribir un mensaje (o adjuntó un
+  // archivo) y no lo ha enviado todavía, marcamos la página como
+  // "sucia" para que el botón Home/volver pregunte antes de salir.
+  useEffect(() => {
+    setDirty(Boolean(draft.trim()) || draftFile !== null);
+  }, [draft, draftFile, setDirty]);
   const [sending, setSending] = useState(false);
   // 6.6: antes el error al enviar se mostraba con alert()
   const [sendError, setSendError] = useState<string | null>(null);
@@ -107,7 +118,7 @@ export default function Messages() {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-6xl mx-auto">
-        <button onClick={() => navigate('/dashboard')} className="flex items-center text-gray-500 hover:text-violet-600 mb-6 transition">
+        <button onClick={() => go('/dashboard')} className="flex items-center text-gray-500 hover:text-violet-600 mb-6 transition">
           <ArrowLeft size={20} className="mr-2" /> Volver al Dashboard
         </button>
 
@@ -183,7 +194,7 @@ export default function Messages() {
                           {m.attachments.length > 0 && (
                             <div className="mt-1 space-y-1">
                               {m.attachments.map((a) => (
-                                <a key={a.id} href={`/uploads/${a.filename}`} target="_blank" rel="noreferrer"
+                                <a key={a.id} href={`${API_BASE_URL}/uploads/${a.filename}`} target="_blank" rel="noreferrer"
                                   className={`flex items-center gap-1.5 text-xs underline ${isMine ? 'text-violet-100' : 'text-violet-600'}`}>
                                   <Paperclip size={12} /> {a.originalName}
                                 </a>
@@ -235,6 +246,17 @@ export default function Messages() {
       </div>
 
       <NewConversationModal isOpen={isNewOpen} onClose={() => setIsNewOpen(false)} onCreated={handleCreated} />
+
+      <ConfirmDialog
+        isOpen={isConfirmOpen}
+        danger={false}
+        title="¿Volver al Dashboard?"
+        message="Tienes un mensaje sin enviar. Si continúas, se perderá."
+        confirmLabel="Sí, volver"
+        cancelLabel="Seguir aquí"
+        onConfirm={confirmGo}
+        onCancel={cancelGo}
+      />
     </div>
   );
 }

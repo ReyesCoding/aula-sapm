@@ -5,6 +5,7 @@ import {
 import { getAllUsers, createUser, deleteUser, type User } from '../../services/user.service';
 import { getCenters, type EducationalCenter } from '../../services/center.service';
 import { LinkChildModal } from './LinkChildModal';
+import { ConfirmDialog } from '../ConfirmDialog';
 
 const ROLES = ['STUDENT', 'TEACHER', 'CENTRO', 'PARENT', 'ADMIN'];
 
@@ -18,6 +19,10 @@ export const UsersManagement = () => {
   const [listError, setListError] = useState<string | null>(null);
 
   const [linkModalParent, setLinkModalParent] = useState<{ id: number; name: string } | null>(null);
+
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<User | null>(null);
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   // Formulario
   const [formData, setFormData] = useState({
@@ -69,16 +74,20 @@ export const UsersManagement = () => {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('¿Seguro que deseas eliminar este usuario? Esta acción no se puede deshacer.')) return;
-    setListError(null);
+  const confirmHandleDelete = async () => {
+    if (!confirmDeleteUser) return;
+    setConfirmSubmitting(true);
+    setConfirmError(null);
     try {
-      await deleteUser(id);
+      await deleteUser(confirmDeleteUser.id);
+      setConfirmDeleteUser(null);
       fetchUsers();
     } catch (error) {
       console.error(error);
       const errorObj = error as { response?: { data?: { message?: string } } };
-      setListError(errorObj.response?.data?.message || 'No se pudo eliminar el usuario.');
+      setConfirmError(errorObj.response?.data?.message || 'No se pudo eliminar el usuario.');
+    } finally {
+      setConfirmSubmitting(false);
     }
   };
 
@@ -161,7 +170,7 @@ export const UsersManagement = () => {
                       </button>
                     )}
                     <button 
-                      onClick={() => handleDelete(user.id)}
+                      onClick={() => { setConfirmError(null); setConfirmDeleteUser(user); }}
                       className="text-gray-400 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-full"
                       title="Eliminar usuario"
                     >
@@ -259,6 +268,16 @@ export const UsersManagement = () => {
         onClose={() => setLinkModalParent(null)}
         parentId={linkModalParent?.id ?? null}
         parentName={linkModalParent?.name ?? ''}
+      />
+
+      <ConfirmDialog
+        isOpen={confirmDeleteUser != null}
+        title="¿Eliminar usuario?"
+        message={`Esta acción no se puede deshacer${confirmDeleteUser ? `: se eliminará la cuenta de ${confirmDeleteUser.name} (${confirmDeleteUser.role})` : ''}.`}
+        loading={confirmSubmitting}
+        error={confirmError}
+        onConfirm={confirmHandleDelete}
+        onCancel={() => { setConfirmDeleteUser(null); setConfirmError(null); }}
       />
     </div>
   );

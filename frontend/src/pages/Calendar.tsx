@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Loader2, MapPin, Clock } from 'lucide-react';
+import { useConfirmedNavigation } from '../hooks/useConfirmedNavigation';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Loader2, MapPin, Clock, Video } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getEvents, type CalendarEvent } from '../services/calendar.service';
 import { getSubjects } from '../services/subject.service';
@@ -41,7 +42,7 @@ function eventDateKeys(event: CalendarEvent): string[] {
 
 export default function CalendarPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const { go, isConfirmOpen, confirmGo, cancelGo } = useConfirmedNavigation();
 
   const today = useMemo(() => new Date(), []);
   const [viewDate, setViewDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -155,7 +156,7 @@ export default function CalendarPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-6xl mx-auto">
-        <button onClick={() => navigate('/dashboard')} className="flex items-center text-gray-500 hover:text-violet-600 mb-6 transition">
+        <button onClick={() => go('/dashboard')} className="flex items-center text-gray-500 hover:text-violet-600 mb-6 transition">
           <ArrowLeft size={20} className="mr-2" /> Volver al Dashboard
         </button>
 
@@ -269,9 +270,21 @@ export default function CalendarPage() {
                           <Clock size={11} /> {formatTime(ev.startsAt, ev.allDay)}
                         </p>
                         {ev.location && (
-                          <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                            <MapPin size={11} /> {ev.location}
-                          </p>
+                          /^https?:\/\//i.test(ev.location) ? (
+                            <a
+                              href={ev.location}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs text-emerald-600 font-bold flex items-center gap-1 mt-0.5 hover:underline w-fit"
+                            >
+                              <Video size={11} /> Unirse a la clase en vivo
+                            </a>
+                          ) : (
+                            <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                              <MapPin size={11} /> {ev.location}
+                            </p>
+                          )
                         )}
                         {ev.subject && (
                           <p className="text-[10px] text-emerald-600 font-bold mt-0.5">{ev.subject.name}</p>
@@ -293,6 +306,17 @@ export default function CalendarPage() {
         onSaved={loadEvents}
         defaultDate={selectedDay}
         event={editingEvent}
+      />
+
+      <ConfirmDialog
+        isOpen={isConfirmOpen}
+        danger={false}
+        title="¿Volver al Dashboard?"
+        message="Tienes cambios sin guardar en esta página. Si continúas, se perderán."
+        confirmLabel="Sí, volver"
+        cancelLabel="Seguir aquí"
+        onConfirm={confirmGo}
+        onCancel={cancelGo}
       />
     </div>
   );

@@ -8,6 +8,7 @@ import {
   ExternalLink, ArrowRight, X, Mail, PartyPopper, Plus, KeyRound, Loader2, UserCheck, UserX
 } from 'lucide-react';
 import { CreateSubjectModal } from '../CreateSubjectModal';
+import { InfoDialog } from '../InfoDialog';
 import { joinSubjectByCode, manageSubjectEnrollment } from '../../services/subject.service';
 import { getDashboardStats } from '../../services/dashboard.service';
 // 6.4 (antes corregido): este archivo declaraba su PROPIA copia local de
@@ -34,6 +35,10 @@ interface Subject {
   teacherId?: number;
   teacher?: { name: string; id: number };
   description?: string;
+  // % de tareas completadas por el alumno de referencia (ver
+  // subject.controller.ts#getAllSubjects). null/ausente => se omite la
+  // barra (Profesor/Centro/Admin, o Padre con 2+ hijos sin seleccionar).
+  completion?: { total: number; completed: number } | null;
 }
 
 export function AcademicDashboard() {
@@ -53,17 +58,25 @@ export function AcademicDashboard() {
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joinSuccess, setJoinSuccess] = useState<string | null>(null);
+  const [joinResultOpen, setJoinResultOpen] = useState(false);
   const [processingEnrollmentId, setProcessingEnrollmentId] = useState<number | null>(null);
   // 6.6: antes el error al aceptar/rechazar una solicitud se mostraba con alert()
   const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
 
+  // Selector de hijo (Padre/Madre con 2+ hijos vinculados) — pedido
+  // explícito: dejar claro de qué hijo son las materias/datos que se
+  // están mostrando. `null` = "todos los hijos" (comportamiento previo).
+  const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const statsRes = await getDashboardStats();
+      const statsRes = await getDashboardStats(user?.role === 'PARENT' ? selectedChildId : undefined);
       setData(statsRes);
 
-      const subjectsRes = await api.get('/subjects');
+      const subjectsRes = await api.get('/subjects', {
+        params: user?.role === 'PARENT' && selectedChildId ? { childId: selectedChildId } : undefined,
+      });
       let mySubjects: Subject[] = subjectsRes.data;
 
       if (user?.role === 'TEACHER') {
@@ -77,7 +90,7 @@ export function AcademicDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, selectedChildId]);
 
   const handleJoinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,11 +101,13 @@ export function AcademicDashboard() {
       setJoinSuccess(null);
       const result = await joinSubjectByCode(joinCode.trim().toUpperCase());
       setJoinSuccess(result.message);
+      setJoinResultOpen(true);
       setJoinCode('');
       fetchData();
     } catch (err: unknown) {
       const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
       setJoinError(errorObj.response?.data?.message || errorObj.message || 'No se pudo procesar el código.');
+      setJoinResultOpen(true);
     } finally {
       setJoining(false);
     }
@@ -123,29 +138,71 @@ export function AcademicDashboard() {
     const details = data.details || {};
 
     switch (type) {
-        case 'teacher_students':
-            setModalTitle('Mis Estudiantes Activos');
+        case 'parent_children':
+            setModalTitle('Mis Hijos Vinculados');
             setModalContent(
-                <div className="space-y-3">
+                <div className="space-y-2">
+                    {(details.children ?? []).map((child) => (
+                        <button
+                            key={child.id}
+                            onClick={() => { setSelectedChildId(child.id); setIsModalOpen(false); }}
+                            className="w-full text-left p-3 border rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-2"
+                        >
+                            <Users size={16} className="text-blue-600" /> <span className="font-bold text-gray-700">{child.name}</span>
+                        </button>
+                    ))}
+                    <p className="text-xs text-gray-400 pt-2">Haz clic en un hijo para ver solo sus materias y actividades.</p>
+                </div>
+            );
+            setIsModalOpen(true);
+            break;
+        case 'teacher_students': {
+            setModalTitle('Mis Estudiantes Activos');
+            // 🐛 FIX (hallazgo de producto): antes se listaban todos los
+            // alumnos en un solo bloque plano con la materia como una
+            // etiquetita chica — si el profesor tiene varios cursos con
+            // materias del MISMO nombre (ej. "Matemáticas" de 2 secciones
+            // distintas), quedaba ambiguo quién era alumno de cuál. Ahora
+            // se agrupan por el ID real de la materia (no por nombre, que
+            // puede repetirse) y cada grupo muestra su propio encabezado
+            // con nombre + código.
+            const studentsBySubject = new Map<number, { subject: StudentItem['subject']; students: StudentItem['student'][] }>();
+            (details.uniqueStudents ?? []).forEach((item: StudentItem) => {
+                const subjectId = item.subject?.id ?? -1;
+                if (!studentsBySubject.has(subjectId)) {
+                    studentsBySubject.set(subjectId, { subject: item.subject, students: [] });
+                }
+                studentsBySubject.get(subjectId)!.students.push(item.student);
+            });
+            setModalContent(
+                <div className="space-y-5">
                     {(!details.uniqueStudents || details.uniqueStudents.length === 0) ? (
                         <p className="text-gray-500 italic">Aún no tienes estudiantes inscritos.</p>
                     ) : (
-                        details.uniqueStudents.map((item: StudentItem, idx: number) => (
-                            <div key={idx} className="p-3 border rounded-lg hover:bg-blue-50 flex items-center justify-between group transition-colors">
-                                <div className="flex items-center gap-3">
-                                    <div className="bg-blue-100 text-blue-600 p-2 rounded-full">
-                                        <Users size={16} />
-                                    </div>
-                                    <div>
-                                        <p className="font-bold text-gray-800">{item.student?.name || 'Estudiante'}</p>
-                                        <p className="text-xs text-gray-500 flex items-center gap-1">
-                                            <Mail size={10} /> {item.student?.email || 'Sin email'}
-                                        </p>
-                                    </div>
+                        Array.from(studentsBySubject.values()).map((group, gIdx) => (
+                            <div key={gIdx}>
+                                <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-2 flex items-center gap-2">
+                                    <BookOpen size={12} /> {group.subject?.name || 'Sin materia'}
+                                    {group.subject?.id != null && (
+                                        <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono normal-case">#{group.subject.id}</span>
+                                    )}
+                                    <span className="text-gray-400 font-normal normal-case">({group.students.length})</span>
+                                </p>
+                                <div className="space-y-2">
+                                    {group.students.map((student, idx) => (
+                                        <div key={idx} className="p-3 border rounded-lg hover:bg-blue-50 flex items-center gap-3 group transition-colors">
+                                            <div className="bg-blue-100 text-blue-600 p-2 rounded-full">
+                                                <Users size={16} />
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-gray-800">{student?.name || 'Estudiante'}</p>
+                                                <p className="text-xs text-gray-500 flex items-center gap-1">
+                                                    <Mail size={10} /> {student?.email || 'Sin email'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                                <span className="text-[10px] bg-gray-100 px-2 py-1 rounded text-gray-500 font-medium">
-                                    {item.subject?.name || 'Sin materia'}
-                                </span>
                             </div>
                         ))
                     )}
@@ -153,6 +210,7 @@ export function AcademicDashboard() {
             );
             setIsModalOpen(true);
             break;
+        }
 
         case 'teacher_review':
             setModalTitle('Tareas Pendientes de Revisión');
@@ -364,8 +422,39 @@ export function AcademicDashboard() {
       
       <div>
         <h1 className="text-3xl font-bold text-gray-800">Hola, <span className="text-blue-600">{user?.name}</span></h1>
-        <p className="text-gray-500 mt-1">{user?.role === 'TEACHER' ? 'Panel de Gestión Académica' : 'Panel del Estudiante'}</p>
+        <p className="text-gray-500 mt-1">
+          {user?.role === 'TEACHER' ? 'Panel de Gestión Académica'
+            : user?.role === 'PARENT' ? 'Panel del Padre/Madre'
+            : user?.role === 'CENTRO' ? 'Panel de Administración del Centro'
+            : user?.role === 'ADMIN' ? 'Panel de Administración'
+            : 'Panel del Estudiante'}
+        </p>
       </div>
+
+      {user?.role === 'PARENT' && (data.details?.children?.length ?? 0) > 1 && (
+        <div className="bg-white border border-gray-100 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <span className="text-sm font-bold text-gray-500 flex items-center gap-2 shrink-0">
+            <Users size={16} className="text-blue-600" /> Viendo a:
+          </span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setSelectedChildId(null)}
+              className={`px-3 py-1.5 rounded-full text-sm font-bold border transition-colors ${selectedChildId === null ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+            >
+              Todos mis hijos
+            </button>
+            {data.details?.children?.map((child) => (
+              <button
+                key={child.id}
+                onClick={() => setSelectedChildId(child.id)}
+                className={`px-3 py-1.5 rounded-full text-sm font-bold border transition-colors ${selectedChildId === child.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+              >
+                {child.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {data.stats.map((stat, idx) => (
@@ -422,10 +511,17 @@ export function AcademicDashboard() {
             >
               {joining ? <Loader2 size={16} className="animate-spin" /> : null} Unirme
             </button>
-            {joinError && <p className="text-xs text-red-600 font-medium sm:ml-2">{joinError}</p>}
-            {joinSuccess && <p className="text-xs text-green-600 font-medium sm:ml-2">{joinSuccess}</p>}
+
           </form>
         )}
+
+        <InfoDialog
+          isOpen={joinResultOpen}
+          variant={joinError ? 'error' : 'success'}
+          title={joinError ? 'No se pudo unir a la materia' : '¡Solicitud enviada!'}
+          message={joinError || joinSuccess || ''}
+          onClose={() => setJoinResultOpen(false)}
+        />
 
         {courses.length === 0 ? (
              <div className="bg-white rounded-xl p-12 text-center border-2 border-dashed border-gray-200">
@@ -449,6 +545,29 @@ export function AcademicDashboard() {
                                 <h3 className="text-xl font-bold text-gray-800 mb-2 group-hover:text-blue-600 transition-colors">{course.name}</h3>
                                 {user?.role === 'STUDENT' && course.teacher && <p className="text-sm text-gray-500 flex items-center gap-2"><Users size={14} /> Prof. {course.teacher.name}</p>}
                                 <p className="text-sm text-gray-400 mt-2 line-clamp-2">{course.description || "Sin descripción"}</p>
+                                {/* Barra de progreso: solo si hay al menos 1 tarea asignada (si la
+                                    materia todavía no tiene ninguna, se omite por completo, tal como
+                                    se pidió, en vez de mostrar una barra vacía sin sentido). */}
+                                {!!course.completion && course.completion.total > 0 && (() => {
+                                    const pct = Math.round((course.completion.completed / course.completion.total) * 100);
+                                    const isDone = course.completion.completed >= course.completion.total;
+                                    return (
+                                        <div className="mt-3">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <span className="text-xs font-semibold text-gray-500">Tareas completadas</span>
+                                                <span className={`text-xs font-bold ${isDone ? 'text-green-600' : 'text-blue-600'}`}>
+                                                    {isDone ? '100% completado' : `${pct}%`}
+                                                </span>
+                                            </div>
+                                            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                                <div
+                                                    className={`h-full rounded-full transition-all ${isDone ? 'bg-green-500' : 'bg-blue-600'}`}
+                                                    style={{ width: `${pct}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                             <div className="mt-6 pt-4 border-t border-gray-50 flex justify-between items-center text-blue-600 font-semibold text-sm"><span>Ver Aula</span><ArrowRight size={18} className="group-hover:translate-x-1 transition-transform"/></div>
                         </div>

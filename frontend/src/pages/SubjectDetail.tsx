@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getAssignmentsBySubject } from '../services/assignment.service';
-import { getExamsBySubject, toggleExamResults } from '../services/exam.service';
+import { getExamsBySubject, toggleExamResults, updateExam } from '../services/exam.service';
+import { getSubjectById } from '../services/subject.service';
 import { Loader2, ArrowLeft, ArrowRight, Plus, FileText, BrainCircuit, Users, Calendar, Settings, Upload, CheckCircle, Award, ClipboardCheck, MessageCircle, FolderOpen } from 'lucide-react';
+import { useConfirmedNavigation } from '../hooks/useConfirmedNavigation';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 // Componentes
 import { CreateExamModal } from '../components/CreateExamModal';
@@ -59,7 +62,7 @@ interface TaskToEdit {
 export default function SubjectDetail() {
   const { id } = useParams();
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const { go, isConfirmOpen, confirmGo, cancelGo } = useConfirmedNavigation();
   const location = useLocation();
   
   const [activeTab, setActiveTab] = useState<'assignments' | 'exams' | 'grades' | 'attendance' | 'forum' | 'documents'>('assignments');
@@ -92,21 +95,20 @@ export default function SubjectDetail() {
     if (!id) return;
     
     try {
-      const [tasksData, examsData] = await Promise.all([
+      // 🐛 FIX: antes el nombre de la materia se "adivinaba" leyendo el
+      // primer examen o tarea que existiera — una materia recién creada,
+      // sin ninguno todavía, se quedaba mostrando el placeholder genérico
+      // en vez de su nombre real. Ahora se pide la materia directo por su
+      // propio ID (ver subject.controller.ts::getSubjectById).
+      const [subjectData, tasksData, examsData] = await Promise.all([
+        getSubjectById(Number(id)),
         getAssignmentsBySubject(Number(id)),
         getExamsBySubject(Number(id))
       ]);
 
       setAssignments(tasksData);
       setExams(examsData);
-
-      if (examsData.length > 0 && examsData[0].subject) {
-        setSubjectName(examsData[0].subject.name);
-      } else if (tasksData.length > 0) {
-        setSubjectName(tasksData[0].subject.name);
-      } else {
-        setSubjectName(`Aula Virtual`);
-      }
+      setSubjectName(subjectData.name);
       
     } catch (error) {
       console.error("Error cargando datos del aula:", error);
@@ -146,13 +148,28 @@ export default function SubjectDetail() {
     }
   };
 
+  // Reabrir un examen "Cerrado": empuja su fecha límite 30 días hacia
+  // adelante en vez de obligar al profesor a borrarlo y crearlo de nuevo.
+  const handleReopenExam = async (examId: number) => {
+    setExamActionError(null);
+    const newDueDate = new Date();
+    newDueDate.setDate(newDueDate.getDate() + 30);
+    try {
+        const updated = await updateExam(examId, { dueDate: newDueDate.toISOString() });
+        setExams(prev => prev.map(e => e.id === examId ? { ...e, dueDate: updated.dueDate } : e));
+    } catch (error) {
+        const errorObj = error as { response?: { data?: { message?: string } } };
+        setExamActionError(errorObj.response?.data?.message || "Error al reabrir el examen");
+    }
+  };
+
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-blue-600"/></div>;
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-5xl mx-auto">
         
-        <button onClick={() => navigate('/dashboard')} className="flex items-center text-gray-500 hover:text-blue-600 mb-6 transition">
+        <button onClick={() => go('/dashboard')} className="flex items-center text-gray-500 hover:text-blue-600 mb-6 transition">
           <ArrowLeft size={20} className="mr-2"/> Volver al Dashboard
         </button>
 
@@ -351,6 +368,18 @@ export default function SubjectDetail() {
                                 <span className="font-medium text-xs">Revisión {exam.showResults ? "ON" : "OFF"}</span>
                             </label>
                             <div className="h-6 w-px bg-gray-300 mx-1"></div>
+                            {isExpired && (
+                              <>
+                                <button
+                                    onClick={() => handleReopenExam(exam.id)}
+                                    className="text-purple-600 hover:text-purple-800 font-bold text-sm flex items-center gap-1.5 px-2 py-1 rounded hover:bg-purple-50 transition"
+                                    title="Extiende la fecha límite 30 días y reabre el examen"
+                                >
+                                    <Calendar size={16}/> Reabrir
+                                </button>
+                                <div className="h-6 w-px bg-gray-300 mx-1"></div>
+                              </>
+                            )}
                             <button 
                                 onClick={() => setResultsModalData({ id: exam.id, title: exam.title })}
                                 className="text-blue-600 hover:text-blue-800 font-bold text-sm flex items-center gap-1.5 px-2 py-1 rounded hover:bg-blue-50 transition"
@@ -457,6 +486,17 @@ export default function SubjectDetail() {
         )}
 
       </div>
+
+      <ConfirmDialog
+        isOpen={isConfirmOpen}
+        danger={false}
+        title="¿Volver al Dashboard?"
+        message="Tienes cambios sin guardar en esta página. Si continúas, se perderán."
+        confirmLabel="Sí, volver"
+        cancelLabel="Seguir aquí"
+        onConfirm={confirmGo}
+        onCancel={cancelGo}
+      />
     </div>
   );
 }

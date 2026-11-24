@@ -12,7 +12,19 @@ export interface Subject {
     exams: number;
     enrollments?: number;
   };
+  /**
+   * % de tareas completadas por el alumno de referencia (el propio
+   * Estudiante, o el hijo seleccionado/único de un Padre/Madre). `null`
+   * cuando no aplica (Profesor/Centro/Admin, o Padre con 2+ hijos sin
+   * seleccionar ninguno) — ver getAllSubjects en subject.controller.ts.
+   */
+  completion?: { total: number; completed: number } | null;
 }
+
+export const getSubjectById = async (subjectId: number): Promise<Subject> => {
+  const { data } = await api.get<Subject>(`/subjects/${subjectId}`);
+  return data;
+};
 
 export const getSubjects = async (): Promise<Subject[]> => {
   const response = await api.get('/subjects');
@@ -44,5 +56,22 @@ export const manageSubjectEnrollment = async (
   status: 'ACTIVE' | 'REJECTED'
 ): Promise<{ message: string }> => {
   const { data } = await api.patch<{ message: string }>('/subjects/enrollment', { enrollmentId, status });
+  return data;
+};
+
+export interface UpdateSubjectPayload {
+  name?: string;
+  description?: string;
+  /** Reasignar la materia a otro profesor (Centro/Admin). */
+  teacherId?: number;
+}
+
+export const updateSubject = async (subjectId: number, payload: UpdateSubjectPayload): Promise<Subject> => {
+  const { data } = await api.patch<Subject>(`/subjects/${subjectId}`, payload);
+  return data;
+};
+
+export const deleteSubject = async (subjectId: number): Promise<{ message: string }> => {
+  const { data } = await api.delete<{ message: string }>(`/subjects/${subjectId}`);
   return data;
 };

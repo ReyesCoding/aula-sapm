@@ -40,7 +40,7 @@ async function main() {
   console.log('🌱 Sembrando contenido de demostración (v2.0)...');
   const now = new Date();
 
-  const center = await prisma.educationalCenter.findUnique({ where: { code: 'legacy' } });
+  const center = await prisma.educationalCenter.findUnique({ where: { code: 'horizonte' } });
   if (!center) throw new Error('No existe el centro "legacy". Corre primero npx prisma db seed.');
 
   const teacher = await prisma.user.findUnique({ where: { email: 'teacher@aula.com' } });
@@ -58,7 +58,7 @@ async function main() {
   const subjects = Object.values(subjectsByCode) as NonNullable<(typeof subjectsByCode)['MAT']>[];
 
   // ---------------------------------------------------------------
-  // 1. Alumnos: el existente (Pepito) + 4 nuevos, para que haya un
+  // 1. Alumnos: el existente (Pedro) + 4 nuevos, para que haya un
   //    salón real y no un alumno solitario.
   // ---------------------------------------------------------------
   const passwordHash = await bcrypt.hash('123456', 10);
@@ -86,7 +86,7 @@ async function main() {
     });
     newStudents.push(s);
   }
-  const students = [existingStudent, ...newStudents]; // 5 en total, Pepito primero
+  const students = [existingStudent, ...newStudents]; // 5 en total, Pedro primero
   console.log(`👤 ${newStudents.length} alumno(s) nuevo(s) creados (+ ${existingStudent.name} ya existente). Total: ${students.length}.`);
 
   // ---------------------------------------------------------------
@@ -206,7 +206,7 @@ async function main() {
   };
 
   // Para cada alumno que "responde", cuántas preguntas acierta (de 3) - variado para notas realistas.
-  const correctCountByStudentIdx = [3, 2, 1]; // Pepito saca todo bien, el 2do casi todo, el 3ro flojo
+  const correctCountByStudentIdx = [3, 2, 1]; // Pedro saca todo bien, el 2do casi todo, el 3ro flojo
 
   let examCount = 0;
   let submissionCount = 0;
@@ -219,7 +219,7 @@ async function main() {
         subjectId: subject.id,
         teacherId: teacher.id,
         showResults: true,
-        dueDate: addDays(now, 10),
+        dueDate: addDays(now, 60), // ventana amplia para que el examen siga "Abierto" en demos futuras
       },
     });
     examCount++;

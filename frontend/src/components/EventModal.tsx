@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X, Loader2, AlertCircle, Trash2 } from 'lucide-react';
+import { ConfirmDialog } from './ConfirmDialog';
 import { useAuth } from '../context/AuthContext';
 import { getSubjects, type Subject } from '../services/subject.service';
 import {
@@ -138,17 +139,25 @@ export const EventModal = ({ isOpen, onClose, onSaved, defaultDate, event }: Eve
     }
   };
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   const handleDelete = async () => {
     if (!event) return;
-    if (!confirm('¿Eliminar este evento?')) return;
+    setConfirmDelete(true);
+  };
+
+  const confirmHandleDelete = async () => {
+    if (!event) return;
     try {
       setDeleting(true);
       await deleteEvent(event.id);
+      setConfirmDelete(false);
       onSaved();
       onClose();
     } catch (err: unknown) {
       const errorObj = err as ApiError;
       setError(errorObj.response?.data?.message || errorObj.message || 'Error al eliminar el evento.');
+      setConfirmDelete(false);
     } finally {
       setDeleting(false);
     }
@@ -249,13 +258,21 @@ export const EventModal = ({ isOpen, onClose, onSaved, defaultDate, event }: Eve
           </label>
 
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">Ubicación (opcional)</label>
+            <label className="block text-sm font-bold text-gray-700 mb-2">
+              {scope === 'SUBJECT' ? 'Ubicación o enlace de clase en vivo (opcional)' : 'Ubicación (opcional)'}
+            </label>
             <input
               type="text"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
+              placeholder={scope === 'SUBJECT' ? 'https://meet.google.com/xxx-xxxx-xxx' : undefined}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-600 focus:border-transparent outline-none text-sm"
             />
+            {scope === 'SUBJECT' && (
+              <p className="text-xs text-gray-400 mt-1.5">
+                Pega aquí tu enlace de Google Meet (o el de la plataforma que uses): a tus alumnos les aparecerá como "Unirse a la clase en vivo" en el calendario.
+              </p>
+            )}
           </div>
 
           <div>
@@ -286,6 +303,15 @@ export const EventModal = ({ isOpen, onClose, onSaved, defaultDate, event }: Eve
           </div>
         </form>
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmDelete}
+        title="¿Eliminar evento?"
+        message={`Esta acción no se puede deshacer${event ? `: se eliminará "${event.title}"` : ''}.`}
+        loading={deleting}
+        onConfirm={confirmHandleDelete}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </div>
   );
 };

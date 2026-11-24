@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Upload, FileText, Image as ImageIcon, FileArchive, File as FileIcon, Trash2, Loader2, Download } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE_URL } from '../config';
 import {
   getSubjectMaterials,
   uploadSubjectMaterial,
   deleteDocument,
   type SubjectDocument,
 } from '../services/document.service';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface DocumentsPanelProps {
   subjectId: number;
@@ -71,15 +73,19 @@ export const DocumentsPanel = ({ subjectId }: DocumentsPanelProps) => {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('¿Eliminar este material?')) return;
+  const [confirmDeleteDoc, setConfirmDeleteDoc] = useState<SubjectDocument | null>(null);
+
+  const confirmHandleDelete = async () => {
+    if (!confirmDeleteDoc) return;
     try {
-      setDeletingId(id);
-      await deleteDocument(id);
-      setDocuments((prev) => prev.filter((d) => d.id !== id));
+      setDeletingId(confirmDeleteDoc.id);
+      await deleteDocument(confirmDeleteDoc.id);
+      setDocuments((prev) => prev.filter((d) => d.id !== confirmDeleteDoc.id));
+      setConfirmDeleteDoc(null);
     } catch (err) {
       console.error('Error eliminando material:', err);
       setError('No se pudo eliminar el material.');
+      setConfirmDeleteDoc(null);
     } finally {
       setDeletingId(null);
     }
@@ -132,7 +138,7 @@ export const DocumentsPanel = ({ subjectId }: DocumentsPanelProps) => {
                 </p>
               </div>
               <a
-                href={`/uploads/${doc.filename}`}
+                href={`${API_BASE_URL}/uploads/${doc.filename}`}
                 target="_blank"
                 rel="noreferrer"
                 className="p-2 text-gray-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition shrink-0"
@@ -142,7 +148,7 @@ export const DocumentsPanel = ({ subjectId }: DocumentsPanelProps) => {
               </a>
               {canManage && (
                 <button
-                  onClick={() => handleDelete(doc.id)}
+                  onClick={() => setConfirmDeleteDoc(doc)}
                   disabled={deletingId === doc.id}
                   className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition shrink-0 disabled:opacity-50"
                   title="Eliminar"
@@ -154,6 +160,15 @@ export const DocumentsPanel = ({ subjectId }: DocumentsPanelProps) => {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmDeleteDoc != null}
+        title="¿Eliminar material?"
+        message={`Esta acción no se puede deshacer${confirmDeleteDoc ? `: se eliminará "${confirmDeleteDoc.originalName}"` : ''}.`}
+        loading={deletingId === confirmDeleteDoc?.id}
+        onConfirm={confirmHandleDelete}
+        onCancel={() => setConfirmDeleteDoc(null)}
+      />
     </div>
   );
 };

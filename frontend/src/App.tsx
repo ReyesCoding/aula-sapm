@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { DirtyStateProvider } from './context/DirtyStateContext';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Profile } from './pages/Profile';
@@ -12,6 +13,7 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <DirtyStateProvider>
         <Routes>
           {/* Ruta pública */}
           <Route path="/login" element={<Login />} />
@@ -32,6 +34,7 @@ function App() {
           {/* Comodín (404) */}
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
+        </DirtyStateProvider>
       </AuthProvider>
     </BrowserRouter>
   );

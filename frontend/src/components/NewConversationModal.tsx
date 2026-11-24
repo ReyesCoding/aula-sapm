@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X, Send, Loader2, AlertCircle } from 'lucide-react';
 import { getContacts, createConversation, type MessagingContact } from '../services/messaging.service';
+import { useAuth } from '../context/AuthContext';
 
 interface ApiError {
   response?: { data?: { message?: string } };
@@ -22,6 +23,7 @@ const roleLabel: Record<string, string> = {
 };
 
 export const NewConversationModal = ({ isOpen, onClose, onCreated }: NewConversationModalProps) => {
+  const { user } = useAuth();
   const [contacts, setContacts] = useState<MessagingContact[]>([]);
   const [loadingContacts, setLoadingContacts] = useState(true);
   const [contactId, setContactId] = useState<number | ''>('');
@@ -107,9 +109,16 @@ export const NewConversationModal = ({ isOpen, onClose, onCreated }: NewConversa
               >
                 <option value="">Selecciona un contacto...</option>
                 {contacts.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name} ({roleLabel[c.role] || c.role})</option>
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({user?.role === 'STUDENT' && c.role === 'CENTRO' ? 'Centro · Buzón de Sugerencias' : (roleLabel[c.role] || c.role)})
+                  </option>
                 ))}
               </select>
+            )}
+            {user?.role === 'STUDENT' && contacts.some((c) => c.role === 'CENTRO') && (
+              <p className="text-xs text-gray-400 mt-1.5">
+                Nota: el canal con el Centro es para sugerencias o reportes puntuales, no un chat general.
+              </p>
             )}
           </div>
 

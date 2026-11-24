@@ -58,6 +58,15 @@ export interface EnrollmentRequest {
   subject: SubjectSummary;
 }
 
+export interface AdminCenterSummary {
+  id: number;
+  name: string;
+  code: string;
+  isActive: boolean;
+  usersCount: number;
+  subjectsCount: number;
+}
+
 // `details` es específico de cada rol (listas que alimentan los modales de
 // detalle del dashboard de profesor/centro/admin). Antes vivía duplicado
 // dentro de AcademicDashboard.tsx como un tipo `DashboardData` aparte.
@@ -69,6 +78,9 @@ export interface DashboardDetails {
   pendingExams?: ExamItem[];
   completedAssignments?: AssignmentTask[];
   pendingEnrollments?: EnrollmentRequest[];
+  centers?: AdminCenterSummary[];
+  usersByRole?: Record<string, number>;
+  children?: UserSummary[];
 }
 
 // Respuesta real de GET /dashboard/stats.

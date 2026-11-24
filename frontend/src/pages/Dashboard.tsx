@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { AcademicDashboard } from '../components/dashboard/AcademicDashboard';
 import { AdminDashboard } from '../components/dashboard/AdminDashboard';
+import { CentroDashboard } from '../components/dashboard/CentroDashboard';
 import { Loader2, LogOut, User, Settings, ChevronDown, MessageCircle, CalendarDays } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getGlobalUnreadCount } from '../services/messaging.service';
+import { useConfirmedNavigation } from '../hooks/useConfirmedNavigation';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 export const Dashboard = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
+  const { go, isConfirmOpen, confirmGo, cancelGo } = useConfirmedNavigation();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -37,15 +41,20 @@ export const Dashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
             
-            {/* Logo */}
-            <div className="flex items-center gap-3">
-              <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-2 rounded-lg font-bold shadow-md shadow-blue-200">
+            {/* Logo / Botón Home */}
+            <button
+              type="button"
+              onClick={() => go('/dashboard')}
+              className="flex items-center gap-3 focus:outline-none group"
+              title="Ir al inicio"
+            >
+              <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-2 rounded-lg font-bold shadow-md shadow-blue-200 group-hover:shadow-lg transition-shadow">
                 AS
               </div>
               <span className="font-bold text-xl text-gray-800 tracking-tight">
-                Aula<span className="text-blue-600">System</span>
+                Aula<span className="text-blue-600">Sapm</span>
               </span>
-            </div>
+            </button>
 
             {/* Mensajes + Calendario + Usuario */}
             <div className="flex items-center gap-1">
@@ -122,10 +131,23 @@ export const Dashboard = () => {
       <main className="py-6">
         {user.role === 'ADMIN' ? (
              <AdminDashboard />
+        ) : user.role === 'CENTRO' ? (
+             <CentroDashboard />
         ) : (
              <AcademicDashboard />
         )}
       </main>
+
+      <ConfirmDialog
+        isOpen={isConfirmOpen}
+        danger={false}
+        title="¿Volver al inicio?"
+        message="Tienes cambios sin guardar en esta página. Si continúas, se perderán."
+        confirmLabel="Sí, volver al inicio"
+        cancelLabel="Seguir aquí"
+        onConfirm={confirmGo}
+        onCancel={cancelGo}
+      />
     </div>
   );
 };

@@ -255,12 +255,50 @@ Este es el hallazgo de seguridad más parecido en severidad a los de la sección
 
 **Fix aplicado:** agregué `centerWhere(authReq)` al `where` de `searchUsers` (ADMIN sigue viendo todos; todos los demás, solo su propio centro), y restringí la ruta a los únicos roles que realmente la usan desde el frontend: `authorizeRoles([TEACHER, CENTRO, ADMIN])` (los dos únicos call-sites son el selector de profesor al crear materia y la vinculación de hijos en el panel de Admin).
 
+### 10.5 — `getVisibleAssignmentsForStudent` filtraba tareas de OTROS alumnos específicos (fuga de IDOR informativo)
+
+Encontrado haciendo una pasada de QA manual completa contra el entorno desplegado en Render (login real como cada rol + llamadas directas a la API con el token de sesión), no por lectura estática del código — por eso no apareció en las pasadas anteriores.
+
+`assignment.service.ts::getVisibleAssignmentsForStudent` construía la visibilidad así: `OR: [{ studentId }, { subjectId: { in: subjectIds } }]`. El segundo término de ese `OR` no filtraba por `studentId` en absoluto, así que cualquier tarea de una materia donde el alumno está inscrito — **incluida una asignada individualmente a OTRO alumno específico** (`Assignment.studentId` apunta a un alumno concreto; ver comentario en `schema.prisma`) — aparecía también en la lista de tareas de todos sus compañeros. Las notas/feedback/archivo de entrega no se filtraban (esos vienen solo del `include: { submissions: { where: { studentId } } }` de la entrega PROPIA del que consulta), pero sí se filtraban: el título y fecha de una tarea ajena, filas duplicadas y confusas con un estado (`PENDING`/`LATE`) derivado incorrectamente (porque nunca va a existir una entrega propia para una tarea que no es tuya), y el `studentId` interno del otro alumno quedaba expuesto en la respuesta JSON.
+
+Como `dashboard.controller.ts` ya reutiliza esta misma función para los conteos de "Actividades Pendientes" de Estudiante y Padre (ver sección 6.4), el bug también inflaba esos números — es probablemente la causa de que el dashboard de un Padre mostrara 52 "actividades pendientes" para un solo hijo.
+
+**Fix aplicado:** el segundo término del `OR` ahora exige explícitamente `studentId: null` (es decir, solo tareas compartidas con toda la materia), dejando intacto el primer término (`{ studentId }`, la tarea es mía). Un alumno ve exactamente: lo que le asignaron a él en particular, más lo que se asignó a toda la materia.
+
 ### Verificación realizada
 
 - `npx tsc --noEmit` limpio en `backend/` y `frontend/` después de **cada** cambio significativo, no solo al final.
 - `grep` exhaustivo, repetido al final de todo, confirmando cero: `@ts-ignore`, `(req as any).user` en controllers, `{ error: }`, `alert(`, `new PrismaClient` duplicado, y referencias a cualquier archivo borrado.
-- Trazado manual de cada endpoint modificado, siguiendo el flujo rol → policy → query de Prisma, para los 4 hallazgos críticos + los 2 nuevos (10.1, 10.4).
+- Trazado manual de cada endpoint modificado, siguiendo el flujo rol → policy → query de Prisma, para los 4 hallazgos críticos + los 3 nuevos (10.1, 10.4, 10.5).
+- Spot-check manual de Exámenes, Calificaciones y Asistencia buscando el mismo patrón (`subjectId: { in } }` sin acompañar de `studentId`) — los tres filtran siempre por `studentId` exacto, no reproducen este bug.
 - **Lo que NO pude verificar:** no tengo acceso de red a tu base de datos de Neon desde este entorno, así que no corrí las rutas contra datos reales ni un server levantado — esto es revisión estática + compilación, no una prueba de integración end-to-end. Tampoco corrí `npm run build` del frontend hasta el final (falló por un problema de binario nativo de Rollup específico de este entorno de ejecución, no relacionado con ningún cambio que hice — `tsc --noEmit`, que es la verificación de tipos real, sí pasó limpio). Si querés que verifiquemos con el servidor realmente corriendo, es el siguiente paso lógico y lo puedo guiar.
+
+### 10.6 — Rediseño de alcance por rol: Centro administra personal, no materias (v3.0)
+
+Encontrado por Bryan probando la demo en vivo, no por mí: el perfil CENTRO entraba a la misma pantalla que Profesor/Estudiante/Padre ("Mis Materias" + botón suelto de "Nueva Materia"), como si Centro impartiera clases directamente. Mirándolo con una cadena de mando real de colegio, tenía razón — Admin da soporte de plataforma a cada Centro; Centro administra a SU PERSONAL DOCENTE (altas, bajas, qué materias imparte cada quien); el Profesor opera 100% de la vida académica de sus propias materias (tareas, exámenes, calificaciones, asistencia, foro, material, clases en vivo); Estudiante/Padre son los destinatarios de todo eso. El diseño anterior (documentado como decisión de producto en la sección 11 original) hacía de CENTRO un "co-administrador académico" de cualquier materia de su centro — eso quedó revertido.
+
+**Cambios de permisos (backend, con el frontend seccionado abajo):**
+- `grades.policy.ts::canGradeSubject` y `forum.policy.ts::assertCanAccessForum`/`canModerateSubject`: ya no devuelven `true`/pasan para CENTRO. Por extensión (son funciones reutilizadas, ver sección 6 de este informe), `attendance.policy.ts`, `calendar.policy.ts::canManageSubjectEvents` y `document.policy.ts` pierden ese acceso de CENTRO automáticamente, sin tocar esos 3 archivos.
+- CENTRO conserva **solo lectura** sobre calificaciones/asistencia de estudiantes de su centro (`assertCanViewStudentGrades`/`assertCanViewStudentAttendance`, sin cambios) — para supervisión y atención de reclamos, no para operar.
+- `users.controller.ts::getAllUsers/createUser/deleteUser`: antes exclusivos de ADMIN a nivel de ruta. Ahora también los usa CENTRO, pero con alcance forzado **del lado del servidor** (nunca confiando en lo que mande el body/frontend): solo ve/crea/elimina cuentas `TEACHER` de su propio `educationalCenterId`. Cambiar el ROL de un usuario y vincular padres-hijos siguen siendo exclusivos de ADMIN (`users.routes.ts`).
+- `subject.controller.ts`: nuevos `updateSubject` (`PATCH /api/subjects/:id`, reasignar `teacherId`/editar nombre-descripción) y `deleteSubject` (`DELETE /api/subjects/:id`), ambos con el mismo patrón de alcance (Centro acotado a su centro y a profesores de su centro; Profesor solo su propia materia, sin poder reasignarla a otro; Admin sin restricción).
+- `messaging.policy.ts::getAllowedContactIds`: reescrito por completo para reflejar la cadena de mando (ver cabecera del archivo para la matriz completa). Cambios de fondo respecto a v2.0:
+  - **Admin ya no habla directo con Profesor/Estudiante/Padre** — su único contacto es el staff `CENTRO` de cualquier centro (escalamiento/soporte). Esto es un cambio deliberado de filosofía: todo pasa por Centro, Admin no opera el día a día de ningún plantel.
+  - **Profesor/Estudiante/Padre ya no hablan directo con Admin** — mismo motivo, en espejo.
+  - **Estudiante ↔ Estudiante: permitido**, si acotado a compañeros de una materia con inscripción `ACTIVE` en común. Esto **deroga** la regla de v2.0 ("sin mensajería estudiante-a-estudiante", una decisión de producto explícita de esa pasada) — a pedido expreso de Bryan en esta.
+  - **Padre ↔ Padre: nuevo.** Acotado a padres cuyos hijos comparten al menos una materia activa con el/los hijo(s) del actor (evita que un padre pueda enumerar a cualquier otro padre del centro — el alcance real es "padres del mismo salón", no "todos los padres").
+  - **Padre ↔ su propio hijo: nuevo.** Antes explícitamente excluido ("ni al propio hijo ni a otros estudiantes/padres"); ahora permitido en ambos sentidos (se agregó también en la rama STUDENT, para que el hijo pueda iniciar la conversación, no solo responder).
+  - **Estudiante ↔ Centro:** el hilo técnico sigue existiendo (`DIRECT`, igual que cualquier otro), pero el frontend (`NewConversationModal.tsx`) lo presenta como "Centro · Buzón de Sugerencias" con una nota aclaratoria cuando quien mira es STUDENT — es un canal formal/puntual, no un chat general, sin necesitar un tipo de conversación nuevo en el modelo de datos.
+- **Frontend:** `Dashboard.tsx` ahora manda a CENTRO a un `CentroDashboard.tsx` dedicado (antes cualquier rol que no fuera ADMIN caía en `AcademicDashboard.tsx`, la pantalla de "Mis Materias" pensada para quien cursa/imparte una materia). El nuevo dashboard muestra `TeachersManagement.tsx` (nuevo): lista de profesores del centro, cada uno con sus materias asignadas, con altas/bajas de profesor y reasignación/eliminación de materias inline. El encabezado también quedó resuelto para nombres largos (el dato de ejemplo `Administración Centro Legacy` desbordaba el layout de `AcademicDashboard.tsx`, pensado para nombres cortos) — ahora permite salto de línea en vez de desbordar, y se acortó el nombre de ejemplo en el seed a `Administración`.
+- **"Clases en vivo" (pedido de Bryan):** no se integró la API real de Google Meet (fuera de alcance razonable para este proyecto) — en su lugar, un evento de calendario de tipo `SUBJECT` acepta un enlace en su campo `location` ya existente (sin migración de esquema) y el calendario lo detecta (`/^https?:\/\//`) para mostrarlo como botón "Unirse a la clase en vivo" en vez de texto de ubicación plano. El profesor pega su propio enlace (Meet, Zoom, lo que use); es deliberadamente simple.
+
+**Lo que NO cambié:** el modelo de datos (`Subject.teacherId` sigue siendo `Int` no nulo — seguís sin poder tener una materia "sin profesor" a mitad de una reasignación, hay que reasignar atómicamente) y los endpoints de Exámenes/Asistencia/Calificaciones en sí (ya filtraban correctamente por `teacherId`/`studentId` exacto; lo que cambió es la política de *quién* puede llamarlos, no la query interna).
+
+### Verificación realizada (10.6)
+
+- `npx tsc --noEmit` limpio en `backend/` y `frontend/` tras todos estos cambios — mismo set de errores pre-existentes de este entorno (ver nota de la sección 10.5), cero errores nuevos.
+- Revisé que `attendance.policy.ts`, `calendar.policy.ts` y `document.policy.ts` no necesitaran edición propia al reutilizar `grades.policy.ts`/`forum.policy.ts` — confirmado con `git diff` (sin cambios en esos 3 archivos).
+- **Lo que falta probar en vivo** (no pude: sin acceso de red a tu Neon ni server corriendo desde este entorno): login real como CENTRO viendo el nuevo dashboard, crear/eliminar un profesor, reasignar una materia entre dos profesores, y la matriz de mensajería completa (en particular Estudiante↔Estudiante y Padre↔Padre, que son casos nuevos). Lo haré apenas hagas el push y Render redespliegue.
 
 ---
 
@@ -274,21 +312,26 @@ Acceso total, sin restricción de centro, en prácticamente todo. Específicamen
 - ✅ Crear/listar/editar centros educativos; asignar cualquier usuario a cualquier centro.
 - ✅ Crear/listar/eliminar cualquier usuario; actualizar el rol de cualquiera; vincular/desvincular padres-hijos.
 - ✅ Crear materias para cualquier centro; ver todas las materias de todos los centros.
-- ✅ Crear exámenes, tareas, calificar, tomar asistencia, moderar foros, subir material, crear eventos de cualquier tipo — en cualquier materia de cualquier centro (todas las `policy.ts` devuelven `true` para ADMIN como primer chequeo).
+- ✅ Crear exámenes, tareas, calificar, tomar asistencia, moderar foros, subir material, crear eventos de cualquier tipo — en cualquier materia de cualquier centro (todas las `policy.ts` devuelven `true` para ADMIN como primer chequeo). Esto se mantiene como una capacidad de soporte/override de plataforma, no de operación diaria (ver 10.6).
 - ✅ Ver el reporte PDF y las calificaciones de cualquier estudiante.
 - ✅ Buscar usuarios (`/users/search`) sin filtro de centro.
 - ⚠️ No puede borrar su propia cuenta de usuario mientras está logueado (protección explícita en `deleteUser`, para no perder el acceso al panel).
 - ❌ No tiene dashboard de "mis materias" (su dashboard es de agregados de plataforma: usuarios/materias/tareas totales).
+- ❌ **(v3.0)** Ya no puede iniciar una conversación directa con un Profesor/Estudiante/Padre — su único contacto de mensajería es el staff `CENTRO` de cada centro (ver 10.6). Sigue pudiendo intervenir sobre cualquier recurso vía la API/paneles; lo que cambió es el canal de chat, no el acceso a datos.
 
 ### CENTRO (admin de una institución específica)
 
-Todo lo de arriba, pero **acotado a `educationalCenterId === el suyo`**, verificado con `assertSameCenter`/`centerWhere` en cada endpoint:
-- ✅ Ver/crear materias de su centro; crear exámenes y tareas en cualquier materia de su centro (no necesita ser el profesor asignado — `canGradeSubject` lo permite explícitamente para CENTRO).
-- ✅ Calificar, tomar asistencia, moderar foros, subir material, crear eventos — en cualquier materia de su centro, por el mismo motivo (es "co-administrador" de toda la materia, no solo de la suya).
-- ✅ Crear eventos de tipo `CENTER` para su propio centro (no para otro).
+**(Redefinido en v3.0, nov. 2026 — ver 10.6. Lo de abajo ya refleja la versión vigente, no la original.)**
+Acotado a `educationalCenterId === el suyo`, verificado con `assertSameCenter`/`centerWhere` en cada endpoint. Su rol ahora es administrar al PERSONAL de su centro, no operar las materias directamente:
+- ✅ Crear/listar/eliminar cuentas `TEACHER` de su propio centro (`users.controller.ts` fuerza `role=TEACHER` y `educationalCenterId=el suyo` del lado del servidor, sin importar qué mande el body — igual patrón que `createSubject`).
+- ✅ Crear materias asignándolas a uno de sus profesores, reasignar una materia existente a otro profesor (`PATCH /api/subjects/:id`), eliminar una materia de su centro.
+- ✅ Crear eventos de tipo `CENTER` para su propio centro (no para otro) — sigue siendo su "megáfono" administrativo.
 - ✅ Buscar usuarios (`/users/search`) — acotado a su centro desde el fix de la sección 10.4.
-- ✅ Ver el reporte PDF y las calificaciones de cualquier estudiante de su centro (`assertCanViewStudentGrades` lo valida contra `educationalCenterId`).
-- ❌ No puede crear/editar centros, ni crear/eliminar usuarios, ni cambiar roles — eso sigue siendo exclusivo de ADMIN (`users.routes.ts` lo bloquea a nivel de ruta).
+- ✅ Ver (solo lectura) el reporte PDF y las calificaciones/asistencia de cualquier estudiante de su centro (`assertCanViewStudentGrades`/`assertCanViewStudentAttendance` lo siguen permitiendo, para supervisión y atención de reclamos) — pero ya no puede crearlas ni editarlas.
+- ✅ Mensajería con el profesorado y las familias de su propio centro, y con Admin (escalamiento) — ver 10.6.
+- ❌ **(v3.0)** Ya NO puede calificar, tomar asistencia, moderar foros ni subir material de ninguna materia — eso es exclusivo del profesor titular (o Admin, como soporte de plataforma). `canGradeSubject`/`assertCanAccessForum`/`canModerateSubject` ya no devuelven `true` para CENTRO.
+- ❌ **(v3.0)** Ya no puede crear/eliminar cuentas `STUDENT`/`PARENT`/`CENTRO` — `createUser`/`deleteUser` fuerzan y validan `role === TEACHER` cuando el actor es CENTRO.
+- ❌ No puede crear/editar centros, ni cambiar roles, ni vincular padres-hijos — eso sigue siendo exclusivo de ADMIN (`users.routes.ts` lo bloquea a nivel de ruta).
 - ❌ No puede ver ni tocar nada de otro centro — confirmado: cualquier intento devuelve 403 vía `assertSameCenter`.
 - ⚠️ `getCenter` (`GET /centers/:id`): puede ver el detalle de su propio centro, pero no el de otro (chequeo explícito `user.educationalCenterId !== id`).
 
@@ -299,7 +342,8 @@ El rol con permisos más "quirúrgicos" — casi todo está condicionado a `subj
 - ✅ Calificar, tomar asistencia, moderar foro, subir material, crear eventos de materia, ver entregas — pero **solo en sus propias materias** (`canGradeSubject`/`canModerateSubject` devuelven `false` si `teacherId !== actor.userId`).
 - ✅ Ver reporte PDF / calificaciones / asistencia de un estudiante — pero **solo si ese estudiante tiene una inscripción `ACTIVE` en alguna materia que él imparte** (`assertCanViewStudentGrades`, rama TEACHER). No puede pedir el reporte de un estudiante cualquiera del sistema (este era el hallazgo 3.4, ya corregido).
 - ✅ Buscar usuarios (`/users/search`) — acotado a su centro.
-- ✅ Crear conversaciones grupales/de anuncio (`canCreateGroupOrAnnouncement`); contactar a sus propios estudiantes, los padres de esos estudiantes, y el staff de su centro — no a estudiantes de otras materias ni de otros profesores.
+- ✅ Crear conversaciones grupales/de anuncio (`canCreateGroupOrAnnouncement`); contactar a sus propios estudiantes, los padres de esos estudiantes, otros profesores de su centro y a Centro — **(v3.0)** ya no a Admin directo (escala vía Centro).
+- ✅ **(v3.0)** Puede agregar un enlace de clase en vivo (Google Meet u otro) a un evento de calendario de tipo `SUBJECT` — se guarda en el campo `location` y se renderiza como botón "Unirse a la clase en vivo" para sus alumnos (sin integración real con la API de Meet; el profesor pega su propio enlace).
 - ❌ No puede crear/editar usuarios, centros, ni ver/calificar materias que no son suyas.
 - ❌ No puede crear eventos de tipo `CENTER` (`canManageCenterEvents` excluye a TEACHER).
 - ⚠️ `getAssignmentById`/`getSubmissionsByAssignment`: solo si es el `creatorId` de esa tarea específica (no basta con ser el profesor de la materia en general — es el `creatorId` exacto).
@@ -310,7 +354,7 @@ El rol más restringido, y el que más se endureció en esta pasada:
 - ✅ Ver/entregar tareas y exámenes de materias donde tiene inscripción `ACTIVE` (verificado explícitamente en los fixes 4.2 y 3.3 — antes no se chequeaba inscripción en absoluto).
 - ✅ Ver sus propias calificaciones, asistencia, y su propio reporte PDF (`assertCanViewStudentGrades`/`assertCanViewStudentAttendance`, rama STUDENT: solo si `actor.userId === studentId`).
 - ✅ Participar en el foro de materias donde está inscrito `ACTIVE`; ver/descargar material de esas materias.
-- ✅ Contactar a los profesores de sus materias activas y al staff (CENTRO/ADMIN) de su centro — **no** a otros estudiantes (regla explícita, "sin mensajería estudiante-a-estudiante", documentada en `messaging.policy.ts`).
+- ✅ **(v3.0 — revertido respecto a la regla original)** Contactar a sus compañeros de clase (comparten al menos una materia con inscripción `ACTIVE`), a los profesores de sus materias activas, a su(s) propio(s) Padre/Madre vinculado(s), y a Centro — este último canal se presenta en la UI como "Buzón de Sugerencias" (no un chat libre), no con Admin. La regla original ("sin mensajería estudiante-a-estudiante") quedó derogada a pedido explícito de Bryan — ver 10.6 para el razonamiento.
 - ❌ No puede crear materias, exámenes, tareas, eventos, ni calificar — todo bloqueado a nivel de ruta o de policy.
 - ❌ No puede ver tareas/entregas/calificaciones de otro estudiante, ni de materias donde no está inscrito (hallazgos 3.3 y 4.2, ya corregidos).
 - ❌ No puede llamar a `/users/search` (bloqueado en el fix 10.4 — antes sí podía, era parte de la fuga).
@@ -320,7 +364,7 @@ El rol más restringido, y el que más se endureció en esta pasada:
 
 Rol de solo lectura sobre sus hijos vinculados, nada más:
 - ✅ Ver las calificaciones, asistencia y reporte PDF de un hijo — **solo** si existe un registro `ParentChild` que los vincula (`assertCanViewStudentGrades`/`assertCanViewStudentAttendance`, rama PARENT). Esto incluye el fix nuevo en `getAssignmentById`, que ahora también respeta esta regla para ver una entrega específica de su hijo.
-- ✅ Contactar a los profesores de las materias de sus hijos vinculados, y al staff de su centro.
+- ✅ **(v3.0)** Contactar a los profesores de las materias de sus hijos vinculados, a Centro, a otros padres cuyos hijos comparten clase con el suyo, y — novedad de esta pasada — directamente a su(s) propio(s) hijo(s) vinculado(s) (antes explícitamente excluido). Ya no a Admin directo.
 - ❌ No tiene acceso al foro de ninguna materia (`assertCanAccessForum` lanza 403 explícitamente para PARENT — es una decisión de producto documentada, no un bug).
 - ❌ No puede ver material de materia (`assertCanAccessSubjectMaterials` reusa la misma regla que el foro).
 - ❌ No puede crear/calificar/tomar asistencia/moderar nada.
@@ -334,5 +378,97 @@ Rol de solo lectura sobre sus hijos vinculados, nada más:
 - **El modelo de `Assignment`** (sección 10.1) es la única limitación real de alcance que queda y que te recomiendo resolver antes de usar el producto con más de un estudiante por materia en serio.
 
 ---
+
+## 11. Internacionalización (i18n): evaluación de alcance y plan propuesto
+
+Pediste evaluar qué tan factible es ofrecer la app en otro idioma (inglés,
+pensando en que la vea un recruiter de habla inglesa) y propusiste vos
+mismo que fuera un simple selector de idioma en vez de traducir todo el
+contenido, justamente para no tener que tocar la base de datos ni los
+scripts de seed. Después de revisar el alcance real del código, esa es
+también mi recomendación — pero con una distinción importante que vale la
+pena dejar explícita antes de empezar a construir nada, para que la
+decisión final sea tuya y no una sorpresa a mitad de camino.
+
+### Qué SÍ es razonable traducir con un selector de idioma
+
+Todo el texto **estático de la interfaz**, es decir, el que vive en el
+código de React, no en la base de datos: títulos de pantalla, nombres de
+botones ("Guardar", "Cancelar", "Ver Aula"), etiquetas de formularios,
+mensajes de validación, encabezados de tabla, textos de los modales de
+confirmación, el contenido de `InfoDialog`/`ConfirmDialog`, etc. Esto es
+exactamente lo que vos tenías en mente, y técnicamente es sencillo con
+una librería como `react-i18next`: un selector (🇪🇸/🇬🇧) en el Login y en
+el Navbar, un diccionario `es.json`/`en.json` por idioma, y reemplazar
+cada string literal (`"Guardar"`) por una llamada a la función de
+traducción (`t('actions.save')`).
+
+### Qué NO se puede traducir sin tocar la base de datos (el límite real)
+
+El contenido que SÍ vive en la base de datos — nombres de materias
+("Matemáticas"), títulos de tareas ("Ecuaciones de primer grado"),
+anuncios, el cuerpo de los mensajes de chat, las preguntas de examen, los
+posts del foro, los nombres de los eventos de calendario — es texto que
+cargó un profesor/centro real (o, en la demo, que sembramos nosotros) y
+**no se traduce solo con un selector de idioma en el frontend**, porque
+ese texto no existe en dos versiones: existe una sola vez, en español,
+como dato. Un selector de idioma en la UI puede cambiar el idioma de los
+botones alrededor de "Ecuaciones de primer grado", pero no puede
+inventarle una traducción al inglés a esa tarea sin que alguien (un
+profesor, o nosotros en el seed) la escriba en ambos idiomas, o sin pasar
+el texto por un traductor automático en tiempo real (lo cual tiene sus
+propios costos/riesgos y no es gratis).
+
+En otras palabras: con el enfoque que proponés, un recruiter que active
+"English" vería un dashboard, botones y formularios en inglés perfecto,
+pero seguiría viendo "Matemáticas", "Historia" y las tareas en español —
+que para el propósito de portafolio (mostrar que la app funciona y que
+sabés construir software bien hecho) es perfectamente aceptable y es
+exactamente lo que ya esperabas, pero lo aclaro para que quede escrito y
+no sea una sorpresa si alguien pregunta "¿por qué el nombre de la materia
+no cambió de idioma?".
+
+### Plan propuesto (si lo aprobás, lo implemento en la próxima pasada)
+
+1. Instalar `i18next` + `react-i18next` + `i18next-browser-languagedetector`
+   en el frontend (detecta el idioma del navegador como default, pero el
+   selector manual siempre manda y se guarda en `localStorage`).
+2. Crear `frontend/src/i18n/es.json` y `frontend/src/i18n/en.json` con la
+   estructura de claves agrupada por pantalla (`login.*`, `dashboard.*`,
+   `messages.*`, `calendar.*`, `common.*` para botones compartidos como
+   "Guardar"/"Cancelar", etc.).
+3. Agregar el selector de idioma como un botón pequeño en el Login (antes
+   de autenticarse) y en el Navbar/Dashboard (después de autenticarse),
+   reusando el mismo patrón visual que ya tienen los demás botones de
+   acción rápida.
+4. Pasar los 43 archivos `.tsx` del frontend (~8.600 líneas) reemplazando
+   cada string de UI estático por `t('clave')`, archivo por archivo,
+   verificando con `tsc --noEmit` después de cada tanda para no romper
+   nada en el camino. Es mecánico pero extenso — es, con bastante
+   diferencia, la tarea más grande de todo este round de feedback, así
+   que prefiero que la apruebes explícitamente antes de dedicarle el
+   tiempo que requiere, en vez de asumir que "evaluar el alcance" incluía
+   hacerla completa sin preguntarte primero.
+5. El backend NO necesita cambios: los mensajes de error de la API
+   (`"No tienes acceso a esta materia"`, etc.) son pocos y podrían
+   quedar en español siempre (lo normal en estos casos es traducir solo
+   la capa de presentación, no las respuestas de error de un API interno
+   que el usuario final nunca lee en crudo), salvo que prefieras que
+   también se traduzcan — en ese caso habría que mandar el idioma
+   preferido en cada request y duplicar los mensajes en `backend/src/`,
+   lo cual es un esfuerzo aparte.
+
+### Mi recomendación concreta
+
+Avanzar con el plan de arriba tal cual (selector de idioma, solo UI
+estática, contenido de base de datos siempre en español) es la opción
+correcta para tu caso de uso — no cambiaría el enfoque. Lo único que
+te pido confirmar antes de que le dedique el tiempo de pasada completa
+por los 43 archivos es si lo querés para *esta* entrega o si preferís
+que primero termine de verificar/cerrar todo lo demás (sección 12) y
+lo dejemos como una mejora aparte para después de que puedas mostrar la
+app — dado que es, de lejos, la tarea más grande que queda pendiente y
+no es un bug ni una falla de seguridad/lógica/diseño de las que me
+pediste específicamente que cubriera primero.
 
 *Este informe cubre lectura estática del código y verificación de tipos (`tsc --noEmit`). No reemplaza pruebas automatizadas con el servidor corriendo contra una base de datos real, ni un pentest formal.*
