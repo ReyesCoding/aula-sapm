@@ -8,9 +8,8 @@
     "build": "prisma generate && tsc",
     "start": "node dist/src/server.js",
     "lint": "eslint . --ext .ts",
-    "start:migrate": "npx prisma migrate deploy && npm start",
-    "postinstall": "prisma generate"
-  },
+    "start:migrate": "npx prisma migrate deploy && npm start"
+    },
   "keywords": [],
   "author": "",
   "license": "ISC",
