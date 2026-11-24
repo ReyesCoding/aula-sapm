@@ -70,7 +70,7 @@ Este proyecto utiliza un **Monorepo** para facilitar el desarrollo.
 
 ## 🛡️ Roles de Usuario (Demo)
 
-Datos de ejemplo (sin información real) sembrados por `prisma/seed.ts` y `prisma/seed-demo-content.ts`. Todas las cuentas usan la misma contraseña de prueba.
+Datos de ejemplo (sin información real) sembrados por `prisma/seed.ts`, `prisma/seed-demo-content.ts` y `prisma/seed-social-content.ts`. Todas las cuentas usan la misma contraseña de prueba.
 
 | Rol | Email | Contraseña (Demo) | Alcance |
 | :--- | :--- | :--- | :--- |
@@ -78,9 +78,9 @@ Datos de ejemplo (sin información real) sembrados por `prisma/seed.ts` y `prism
 | **Centro** | `centro@aula.com` | `123456` | Administración de "Centro Horizonte" |
 | **Profesor** | `teacher@aula.com` | `123456` | Materias, tareas, exámenes, calificaciones |
 | **Estudiante** | `student@aula.com` | `123456` | Vista de alumno (Pedro Jiménez) |
-| **Padre/Madre** | `parent@aula.com` | `123456` | Vista de seguimiento de su hijo vinculado |
+| **Padre/Madre** | `parent@aula.com` | `123456` | Vista de seguimiento de sus 2 hijos vinculados (Pedro y Ana) |
 
-Hay 4 estudiantes adicionales (`maria@aula.com`, `carlos@aula.com`, `sofia@aula.com`, `diego@aula.com`, todos con contraseña `123456`) si quieres ver el sistema con más de un alumno inscrito a la vez.
+Hay 5 estudiantes adicionales (`maria@aula.com`, `carlos@aula.com`, `sofia@aula.com`, `diego@aula.com`, `ana@aula.com`, todos con contraseña `123456`) si quieres ver el sistema con más de un alumno inscrito a la vez, y una segunda cuenta de Padre/Madre (`parent2@aula.com`, madre de María) para probar la mensajería "padre con padre".
 
 > Estas credenciales son intencionalmente públicas: es un entorno de demostración con datos ficticios, pensado para que cualquiera pueda explorarlo libremente. Si este código se reutiliza como base para un sistema con datos reales, elimina esta sección, cambia las contraseñas y desactiva el panel de "Modo Demo" del login con la variable de entorno `VITE_DEMO_MODE=false`.
 
