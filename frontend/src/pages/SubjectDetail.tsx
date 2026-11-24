@@ -3,6 +3,7 @@ import { useParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getAssignmentsBySubject } from '../services/assignment.service';
 import { getExamsBySubject, toggleExamResults, updateExam } from '../services/exam.service';
+import { getSubjectById } from '../services/subject.service';
 import { Loader2, ArrowLeft, ArrowRight, Plus, FileText, BrainCircuit, Users, Calendar, Settings, Upload, CheckCircle, Award, ClipboardCheck, MessageCircle, FolderOpen } from 'lucide-react';
 import { useConfirmedNavigation } from '../hooks/useConfirmedNavigation';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -94,21 +95,20 @@ export default function SubjectDetail() {
     if (!id) return;
     
     try {
-      const [tasksData, examsData] = await Promise.all([
+      // 🐛 FIX: antes el nombre de la materia se "adivinaba" leyendo el
+      // primer examen o tarea que existiera — una materia recién creada,
+      // sin ninguno todavía, se quedaba mostrando el placeholder genérico
+      // en vez de su nombre real. Ahora se pide la materia directo por su
+      // propio ID (ver subject.controller.ts::getSubjectById).
+      const [subjectData, tasksData, examsData] = await Promise.all([
+        getSubjectById(Number(id)),
         getAssignmentsBySubject(Number(id)),
         getExamsBySubject(Number(id))
       ]);
 
       setAssignments(tasksData);
       setExams(examsData);
-
-      if (examsData.length > 0 && examsData[0].subject) {
-        setSubjectName(examsData[0].subject.name);
-      } else if (tasksData.length > 0) {
-        setSubjectName(tasksData[0].subject.name);
-      } else {
-        setSubjectName(`Aula Virtual`);
-      }
+      setSubjectName(subjectData.name);
       
     } catch (error) {
       console.error("Error cargando datos del aula:", error);

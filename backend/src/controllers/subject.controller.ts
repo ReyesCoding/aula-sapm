@@ -1,8 +1,57 @@
 import { Request, Response } from 'express';
 import prisma from '../prisma/client';
-import { EnrollmentStatus, RoleName } from '@prisma/client';
+import { EnrollmentStatus, RoleName, CalendarEventScope } from '@prisma/client';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { centerWhere } from '../utils/tenant';
+
+const SPANISH_MONTHS = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+// Formato "20 de Septiembre - 26 de Septiembre" / "27 de Septiembre - 3 de
+// Octubre" (mes repetido incluso cuando coincide, tal como se pidió
+// explícitamente).
+function formatWeekRange(start: Date, end: Date): string {
+  const startLabel = `${start.getUTCDate()} de ${SPANISH_MONTHS[start.getUTCMonth()]}`;
+  const endLabel = `${end.getUTCDate()} de ${SPANISH_MONTHS[end.getUTCMonth()]}`;
+  return `${startLabel} - ${endLabel}`;
+}
+
+// 🆕 Contenido por defecto al crear una materia (pedido explícito de
+// producto): antes una materia recién creada aparecía completamente
+// vacía para el estudiante que entraba por primera vez ("se ve como si
+// estuviera rota"). Se siembran 4 semanas en blanco en el calendario de
+// la materia (scope SUBJECT) a partir de la semana actual, sin
+// descripción — son placeholders para que el profesor las complete, no
+// contenido inventado presentado como real. Si esto falla por cualquier
+// motivo, NO debe tumbar la creación de la materia en sí (por eso se
+// envuelve en try/catch en el caller y solo se loguea el error).
+async function seedWeeklySchedule(subjectId: number, createdById: number): Promise<void> {
+  const now = new Date();
+  const dayOfWeek = now.getUTCDay(); // 0 domingo ... 6 sábado
+  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const mondayThisWeek = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMonday));
+
+  const weeks = Array.from({ length: 4 }).map((_, i) => {
+    const start = new Date(mondayThisWeek.getTime() + i * 7 * 24 * 60 * 60 * 1000);
+    const end = new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000);
+    return { start, end };
+  });
+
+  await prisma.calendarEvent.createMany({
+    data: weeks.map(({ start, end }) => ({
+      title: `Semana del ${formatWeekRange(start, end)}`,
+      description: null,
+      allDay: true,
+      startsAt: start,
+      endsAt: end,
+      scope: CalendarEventScope.SUBJECT,
+      subjectId,
+      createdById,
+    })),
+  });
+}
 
 export const getAllSubjects = async (req: Request, res: Response) => {
   try {
@@ -22,6 +71,9 @@ export const getAllSubjects = async (req: Request, res: Response) => {
     // exactamente lo que le corresponde ver; Centro/Admin (que gestionan,
     // no "cursan" materias) siguen viendo todas las de su alcance.
     let where: Record<string, unknown> = { ...centerWhere(authReq) };
+    // Poblado solo para PARENT (ver más abajo); usado luego para decidir si
+    // se puede calcular una barra de progreso por materia sin ambigüedad.
+    let parentChildIds: number[] = [];
 
     if (actor.role === RoleName.TEACHER) {
       where = { ...where, teacherId: actor.userId };
@@ -48,6 +100,7 @@ export const getAllSubjects = async (req: Request, res: Response) => {
         }
         childIds = [requested];
       }
+      parentChildIds = childIds;
 
       where = {
         ...where,
@@ -79,10 +132,121 @@ export const getAllSubjects = async (req: Request, res: Response) => {
         }
       }
     });
-    res.json(subjects);
+
+    // Barra de progreso por materia ("% de asignaciones completadas") en
+    // AcademicDashboard.tsx: solo tiene sentido cuando hay UN alumno
+    // concreto de referencia — el propio Estudiante, o un Padre/Madre que
+    // ya seleccionó/solo tiene un hijo. Si un padre con 2+ hijos no ha
+    // elegido ninguno todavía, se omite (ambiguo a cuál hijo correspondería).
+    const targetStudentId: number | undefined =
+      actor.role === RoleName.STUDENT
+        ? actor.userId
+        : actor.role === RoleName.PARENT && parentChildIds.length === 1
+        ? parentChildIds[0]
+        : undefined;
+
+    const completionBySubject = new Map<number, { total: number; completed: number }>();
+    if (targetStudentId !== undefined && subjects.length > 0) {
+      const subjectIds = subjects.map((s) => s.id);
+      // Tareas que le corresponden a este alumno: las asignadas a toda la
+      // materia (studentId null) o específicamente a él/ella.
+      const relevantAssignments = await prisma.assignment.findMany({
+        where: {
+          subjectId: { in: subjectIds },
+          OR: [{ studentId: null }, { studentId: targetStudentId }],
+        },
+        select: {
+          subjectId: true,
+          submissions: { where: { studentId: targetStudentId }, select: { id: true } },
+        },
+      });
+      for (const a of relevantAssignments) {
+        const entry = completionBySubject.get(a.subjectId) ?? { total: 0, completed: 0 };
+        entry.total += 1;
+        if (a.submissions.length > 0) entry.completed += 1;
+        completionBySubject.set(a.subjectId, entry);
+      }
+    }
+
+    const subjectsWithCompletion = subjects.map((s) => ({
+      ...s,
+      completion: completionBySubject.get(s.id) ?? null,
+    }));
+
+    res.json(subjectsWithCompletion);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error obteniendo materias' });
+  }
+};
+
+// 🐛 FIX (hallazgo de producto): SubjectDetail.tsx (frontend) nunca pedía
+// la materia por su propio ID — adivinaba su nombre leyendo
+// `examsData[0].subject.name` o `tasksData[0].subject.name`, el primer
+// examen/tarea que hubiera. Una materia recién creada, sin ninguna tarea
+// ni examen todavía, no tenía de dónde sacar el nombre real y se quedaba
+// mostrando el placeholder genérico ("Aula Virtual") en vez del nombre de
+// la materia — exactamente el caso que reportó Bryan ("creé una materia
+// nueva y al entrar sale 'Cargando materia...'"). Este endpoint nuevo
+// permite pedir la materia directamente por su ID.
+export const getSubjectById = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authReq = req as AuthRequest;
+    const actor = authReq.user!;
+    const id = Number(req.params.id);
+
+    const subject = await prisma.subject.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        description: true,
+        teacherId: true,
+        educationalCenterId: true,
+        teacher: { select: { id: true, name: true } },
+      },
+    });
+    if (!subject) {
+      res.status(404).json({ message: 'Materia no encontrada' });
+      return;
+    }
+
+    // Mismo alcance que getAllSubjects: cada rol solo puede ver materias
+    // que le corresponden.
+    if (actor.role !== RoleName.ADMIN && subject.educationalCenterId !== actor.educationalCenterId) {
+      res.status(403).json({ message: 'No tienes acceso a esta materia' });
+      return;
+    }
+    if (actor.role === RoleName.TEACHER && subject.teacherId !== actor.userId) {
+      res.status(403).json({ message: 'No tienes acceso a esta materia' });
+      return;
+    }
+    if (actor.role === RoleName.STUDENT) {
+      const enrollment = await prisma.enrollment.findUnique({
+        where: { studentId_subjectId: { studentId: actor.userId, subjectId: subject.id } },
+      });
+      if (!enrollment || enrollment.status !== EnrollmentStatus.ACTIVE) {
+        res.status(403).json({ message: 'No estás inscrito en esta materia' });
+        return;
+      }
+    }
+    if (actor.role === RoleName.PARENT) {
+      const links = await prisma.parentChild.findMany({ where: { parentId: actor.userId }, select: { childId: true } });
+      const childIds = links.map((l) => l.childId);
+      const enrollment = await prisma.enrollment.findFirst({
+        where: { studentId: { in: childIds }, subjectId: subject.id, status: EnrollmentStatus.ACTIVE },
+      });
+      if (!enrollment) {
+        res.status(403).json({ message: 'Ninguno de tus hijos está inscrito en esta materia' });
+        return;
+      }
+    }
+
+    res.json(subject);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error obteniendo la materia' });
   }
 };
 
@@ -241,6 +405,14 @@ export const createSubject = async (req: Request, res: Response): Promise<void> 
       },
       include: { teacher: { select: { id: true, name: true } } }
     });
+
+    try {
+      await seedWeeklySchedule(newSubject.id, actor.userId);
+    } catch (seedError) {
+      // No bloquea la creación de la materia: en el peor caso, el
+      // calendario de la materia queda vacío (como antes), no rota nada.
+      console.error('No se pudo sembrar el calendario por defecto de la materia:', seedError);
+    }
 
     res.status(201).json(newSubject);
   } catch (error) {

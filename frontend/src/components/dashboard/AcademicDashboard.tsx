@@ -35,6 +35,10 @@ interface Subject {
   teacherId?: number;
   teacher?: { name: string; id: number };
   description?: string;
+  // % de tareas completadas por el alumno de referencia (ver
+  // subject.controller.ts#getAllSubjects). null/ausente => se omite la
+  // barra (Profesor/Centro/Admin, o Padre con 2+ hijos sin seleccionar).
+  completion?: { total: number; completed: number } | null;
 }
 
 export function AcademicDashboard() {
@@ -152,29 +156,53 @@ export function AcademicDashboard() {
             );
             setIsModalOpen(true);
             break;
-        case 'teacher_students':
+        case 'teacher_students': {
             setModalTitle('Mis Estudiantes Activos');
+            // 🐛 FIX (hallazgo de producto): antes se listaban todos los
+            // alumnos en un solo bloque plano con la materia como una
+            // etiquetita chica — si el profesor tiene varios cursos con
+            // materias del MISMO nombre (ej. "Matemáticas" de 2 secciones
+            // distintas), quedaba ambiguo quién era alumno de cuál. Ahora
+            // se agrupan por el ID real de la materia (no por nombre, que
+            // puede repetirse) y cada grupo muestra su propio encabezado
+            // con nombre + código.
+            const studentsBySubject = new Map<number, { subject: StudentItem['subject']; students: StudentItem['student'][] }>();
+            (details.uniqueStudents ?? []).forEach((item: StudentItem) => {
+                const subjectId = item.subject?.id ?? -1;
+                if (!studentsBySubject.has(subjectId)) {
+                    studentsBySubject.set(subjectId, { subject: item.subject, students: [] });
+                }
+                studentsBySubject.get(subjectId)!.students.push(item.student);
+            });
             setModalContent(
-                <div className="space-y-3">
+                <div className="space-y-5">
                     {(!details.uniqueStudents || details.uniqueStudents.length === 0) ? (
                         <p className="text-gray-500 italic">Aún no tienes estudiantes inscritos.</p>
                     ) : (
-                        details.uniqueStudents.map((item: StudentItem, idx: number) => (
-                            <div key={idx} className="p-3 border rounded-lg hover:bg-blue-50 flex items-center justify-between group transition-colors">
-                                <div className="flex items-center gap-3">
-                                    <div className="bg-blue-100 text-blue-600 p-2 rounded-full">
-                                        <Users size={16} />
-                                    </div>
-                                    <div>
-                                        <p className="font-bold text-gray-800">{item.student?.name || 'Estudiante'}</p>
-                                        <p className="text-xs text-gray-500 flex items-center gap-1">
-                                            <Mail size={10} /> {item.student?.email || 'Sin email'}
-                                        </p>
-                                    </div>
+                        Array.from(studentsBySubject.values()).map((group, gIdx) => (
+                            <div key={gIdx}>
+                                <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-2 flex items-center gap-2">
+                                    <BookOpen size={12} /> {group.subject?.name || 'Sin materia'}
+                                    {group.subject?.id != null && (
+                                        <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono normal-case">#{group.subject.id}</span>
+                                    )}
+                                    <span className="text-gray-400 font-normal normal-case">({group.students.length})</span>
+                                </p>
+                                <div className="space-y-2">
+                                    {group.students.map((student, idx) => (
+                                        <div key={idx} className="p-3 border rounded-lg hover:bg-blue-50 flex items-center gap-3 group transition-colors">
+                                            <div className="bg-blue-100 text-blue-600 p-2 rounded-full">
+                                                <Users size={16} />
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-gray-800">{student?.name || 'Estudiante'}</p>
+                                                <p className="text-xs text-gray-500 flex items-center gap-1">
+                                                    <Mail size={10} /> {student?.email || 'Sin email'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                                <span className="text-[10px] bg-gray-100 px-2 py-1 rounded text-gray-500 font-medium">
-                                    {item.subject?.name || 'Sin materia'}
-                                </span>
                             </div>
                         ))
                     )}
@@ -182,6 +210,7 @@ export function AcademicDashboard() {
             );
             setIsModalOpen(true);
             break;
+        }
 
         case 'teacher_review':
             setModalTitle('Tareas Pendientes de Revisión');
@@ -516,6 +545,29 @@ export function AcademicDashboard() {
                                 <h3 className="text-xl font-bold text-gray-800 mb-2 group-hover:text-blue-600 transition-colors">{course.name}</h3>
                                 {user?.role === 'STUDENT' && course.teacher && <p className="text-sm text-gray-500 flex items-center gap-2"><Users size={14} /> Prof. {course.teacher.name}</p>}
                                 <p className="text-sm text-gray-400 mt-2 line-clamp-2">{course.description || "Sin descripción"}</p>
+                                {/* Barra de progreso: solo si hay al menos 1 tarea asignada (si la
+                                    materia todavía no tiene ninguna, se omite por completo, tal como
+                                    se pidió, en vez de mostrar una barra vacía sin sentido). */}
+                                {!!course.completion && course.completion.total > 0 && (() => {
+                                    const pct = Math.round((course.completion.completed / course.completion.total) * 100);
+                                    const isDone = course.completion.completed >= course.completion.total;
+                                    return (
+                                        <div className="mt-3">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <span className="text-xs font-semibold text-gray-500">Tareas completadas</span>
+                                                <span className={`text-xs font-bold ${isDone ? 'text-green-600' : 'text-blue-600'}`}>
+                                                    {isDone ? '100% completado' : `${pct}%`}
+                                                </span>
+                                            </div>
+                                            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                                <div
+                                                    className={`h-full rounded-full transition-all ${isDone ? 'bg-green-500' : 'bg-blue-600'}`}
+                                                    style={{ width: `${pct}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                             <div className="mt-6 pt-4 border-t border-gray-50 flex justify-between items-center text-blue-600 font-semibold text-sm"><span>Ver Aula</span><ArrowRight size={18} className="group-hover:translate-x-1 transition-transform"/></div>
                         </div>

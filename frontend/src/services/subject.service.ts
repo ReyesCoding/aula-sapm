@@ -12,7 +12,19 @@ export interface Subject {
     exams: number;
     enrollments?: number;
   };
+  /**
+   * % de tareas completadas por el alumno de referencia (el propio
+   * Estudiante, o el hijo seleccionado/único de un Padre/Madre). `null`
+   * cuando no aplica (Profesor/Centro/Admin, o Padre con 2+ hijos sin
+   * seleccionar ninguno) — ver getAllSubjects en subject.controller.ts.
+   */
+  completion?: { total: number; completed: number } | null;
 }
+
+export const getSubjectById = async (subjectId: number): Promise<Subject> => {
+  const { data } = await api.get<Subject>(`/subjects/${subjectId}`);
+  return data;
+};
 
 export const getSubjects = async (): Promise<Subject[]> => {
   const response = await api.get('/subjects');

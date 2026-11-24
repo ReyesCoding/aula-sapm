@@ -5,10 +5,11 @@
   "main": "index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "tsc",
+    "build": "prisma generate && tsc",
     "start": "node dist/src/server.js",
     "lint": "eslint . --ext .ts",
-    "start:migrate": "npx prisma migrate deploy && npm start"
+    "start:migrate": "npx prisma migrate deploy && npm start",
+    "postinstall": "prisma generate"
   },
   "keywords": [],
   "author": "",
